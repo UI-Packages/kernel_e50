@@ -4787,6 +4787,10 @@ int mtk_nand_probe()
 	if (load_fact_bbt(mtd) == 0)
 	{
 		int i;
+		int total_block, bbt_size;
+
+		total_block = 1 << (nand_chip->chip_shift - nand_chip->phys_erase_shift);
+		bbt_size = total_block >> 2;
 
 		//for (i = 0; i < 0x100; i++)
 		//{
@@ -4794,12 +4798,12 @@ int mtk_nand_probe()
 		//	if (!((i+1) & 0x1f))
 		//		printk("\n");
 		//}
-		for (i = 0; i < 0x100; i++)
+		for (i = 0; i < bbt_size; i++)
 		{
 			nand_chip->bbt[i] |= fact_bbt[i];
 		}
 		//printk("\n");
-		for (i = 0; i < 0x100; i++)
+		for (i = 0; i < bbt_size; i++)
 		{
 			printk("%02x ", nand_chip->bbt[i]);
 			if (!((i+1) & 0x1f))

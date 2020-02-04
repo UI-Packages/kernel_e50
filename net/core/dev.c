@@ -3528,7 +3528,7 @@ ncls:
 		 * and set skb->priority like in vlan_do_receive()
 		 * For the time being, just ignore Priority Code Point
 		 */
-		skb->vlan_tci = 0;
+		//skb->vlan_tci = 0;
 	}
 
 	/* deliver only exact match when indicated */

@@ -60,7 +60,8 @@ struct rtnl_link {
 	rtnl_calcit_func 	calcit;
 };
 
-static DEFINE_MUTEX(rtnl_mutex);
+DEFINE_MUTEX(rtnl_mutex);
+EXPORT_SYMBOL(rtnl_mutex);
 
 void rtnl_lock(void)
 {

@@ -88,6 +88,9 @@
 int sysctl_ip_default_ttl __read_mostly = IPDEFTTL;
 EXPORT_SYMBOL(sysctl_ip_default_ttl);
 
+int (*mpls_output) (struct sk_buff **) = NULL;
+EXPORT_SYMBOL(mpls_output);
+
 /* Generate a checksum for an outgoing IP datagram. */
 void ip_send_check(struct iphdr *iph)
 {
@@ -244,11 +247,20 @@ int ip_mc_output(struct sk_buff *skb)
 	struct sock *sk = skb->sk;
 	struct rtable *rt = skb_rtable(skb);
 	struct net_device *dev = rt->dst.dev;
+	int rc = 0;
 
 	/*
 	 *	If the indicated interface is up and running, send the packet.
 	 */
 	IP_UPD_PO_STATS(dev_net(dev), IPSTATS_MIB_OUT, skb->len);
+
+	if (mpls_output != NULL) {
+		rc = mpls_ip_output(skb);
+    		if ((rc <= 0) || (rc == 2)) {
+				rc = (rc == 2) ? 1:rc;
+        			return rc;
+    		}
+	}
 
 	skb->dev = dev;
 	skb->protocol = htons(ETH_P_IP);
@@ -1530,6 +1542,11 @@ void ip_send_unicast_reply(struct net *net, struct sk_buff *skb, __be32 daddr,
 
 	inet->tos = arg->tos;
 	sk = &inet->sk;
+
+	if (mpls_output) {
+		mpls_skb_reset_transit(skb);
+	}
+
 	sk->sk_priority = skb->priority;
 	sk->sk_protocol = ip_hdr(skb)->protocol;
 	sk->sk_bound_dev_if = arg->bound_dev_if;
@@ -1564,3 +1581,294 @@ void __init ip_init(void)
 	igmp_mc_proc_init();
 #endif
 }
+
+int
+l2_send_frame (struct sk_buff *sk)
+{
+  struct hh_cache *hh = NULL;
+  struct neighbour *n = NULL;
+  int retval;
+  unsigned seq;
+
+  /*
+   * cached hardware header, if any
+   */
+  n = dst_neigh_lookup_skb(skb_dst(sk), sk);
+  //n = dst_get_neighbour_noref (skb_dst(sk));
+  if (n)
+    hh = &(n->hh);
+
+  if(hh)
+  {
+    /* read_lock_bh(&hh->hh_lock); */
+    seq = read_seqbegin(&hh->hh_lock);
+    memmove(sk->data - 16, hh->hh_data, 16);
+    /*
+     * IMPLICITNULL hack
+     */
+    *((u16 *)sk->data - 1) = sk->protocol;
+    /* read_unlock_bh(&hh->hh_lock); */
+    read_seqretry(&hh->hh_lock, seq);
+    skb_push(sk, hh->hh_len);
+    //retval = hh->hh_output(sk);
+    retval = neigh_hh_output (hh, sk);
+  }
+  //else if(skb_dst(sk)->neighbour)
+  //else if (dst_neigh_lookup_skb(skb_dst(sk), sk))
+  else if (n /*dst_get_neighbour_noref (skb_dst(sk))*/)
+  {
+#if 0
+    //n = dst_neigh_lookup_skb(skb_dst(sk), sk);
+    n = dst_get_neighbour_noref(skb_dst(sk));
+    //retval = skb_dst(sk)->neighbour->output(sk);
+#endif/*0*/
+    retval = n->output(n, sk);
+  }
+  else
+  {
+    kfree_skb(sk);
+    retval = -1;
+  }
+  return retval;
+}
+/* EXPORT_SYMBOL(l2_send_frame); */
+
+/*
+ * Linux ip_fragment function modified to handle MPLS labelled packets
+ * 'max_frag_size' is the maximum permissible size (excluding link layer
+ * header) of each fragment.
+ */
+int
+mpls_fragment (struct sk_buff *skb, int max_frag_size)
+{
+  struct iphdr     *iph;
+  unsigned char    *raw;
+  unsigned char    *ptr;
+  struct net_device *dev;
+  struct sk_buff   *skb2;
+  unsigned int      mtu, hlen, left, len;
+  int               offset;
+  int               not_last_frag;
+
+  /*
+   * size of the shim header, 0 if not present
+   */
+  int               shim_size = 0;
+  //struct rtable    *rt = (struct rtable *)skb->_skb_dst;
+  struct rtable     *rt = skb_rtable (skb);
+  int               err = 0;
+  u32               common_to_all;
+
+  //dev = rt->u.dst.dev;
+  dev = rt->dst.dev;
+
+  /*
+   *    Point into the IP datagram header.
+   */
+  raw = skb_network_header(skb);
+  iph = (struct iphdr *)raw;
+
+  shim_size = raw - skb->data;
+
+  /*
+   *    Setup starting values.
+   */
+
+  /*
+   * IP header length including options.
+   */
+  hlen = iph->ihl * 4;
+  /*
+   * how much of the data is to be fragmented.
+   */
+  left = ntohs(iph->tot_len) - hlen;
+  /*
+   * starting from the skb->data pointer, this much of the packet
+   * should go in all fragments
+   */
+  common_to_all = (raw - skb->data + hlen);
+  /*
+   * Size of data space in each fragment.
+   */
+  mtu = max_frag_size - common_to_all;
+
+  ptr = raw + hlen;                    /* Where to start from */
+
+  /*
+   *    Fragment the datagram.
+   */
+
+  offset = (ntohs(iph->frag_off) & IP_OFFSET) << 3;
+  not_last_frag = iph->frag_off & htons(IP_MF);
+
+  /*
+   *    Keep copying data until we run out.
+   */
+
+  while (left > 0)
+    {
+      len = left;
+      /* IF: it doesn't fit, use 'mtu' - the data space left */
+      if (len > mtu)
+       len = mtu;
+      /* IF: we are not sending upto and including the packet end
+        then align the next start on an eight byte boundary */
+      if (len < left)
+        {
+         len &= ~7;
+        }
+      /*
+       *    Allocate buffer.
+       */
+
+      if ((skb2 =
+          alloc_skb(len + common_to_all + dev->hard_header_len + 15,
+                    GFP_ATOMIC)) == NULL)
+        {
+         NETDEBUG (KERN_ERR "IP: frag: no memory for new "
+                           "fragment!\n");
+         err = -ENOMEM;
+         goto fail;
+        }
+
+      /*
+       *    Set up data on packet
+       */
+
+      skb2->protocol = skb->protocol;
+      skb2->pkt_type = skb->pkt_type;
+      skb2->priority = skb->priority;
+      skb_reserve(skb2, (dev->hard_header_len + 15) & ~15);
+      skb_put(skb2, common_to_all + len);
+      skb_set_network_header(skb2, shim_size);
+      skb_set_transport_header(skb2, shim_size + hlen);
+#if 0
+      skb2->network_header = skb2->data + shim_size;
+      skb2->transport_header = skb2->network_header + hlen;
+#endif
+
+      /*
+       *    Charge the memory for the fragment to any owner
+       *    it might possess
+       */
+
+      if (skb->sk)
+       skb_set_owner_w(skb2, skb->sk);
+      //skb2->_skb_dst = (unsigned long)dst_clone(skb_dst(skb));
+      skb_dst_copy (skb2, skb);
+      skb2->dev = skb->dev;
+
+      /*
+       *    Copy the packet header into the new buffer.
+       */
+      memcpy(skb2->data, skb->data, common_to_all);
+
+      /*
+       *    Copy a block of the IP datagram.
+       */
+      memcpy(skb_transport_header(skb2), ptr, len);
+      left -= len;
+
+      /*
+       *    Fill in the new header fields.
+       */
+      iph = (struct iphdr *)skb_network_header(skb2);
+      iph->frag_off = htons((offset >> 3));
+
+      /* ANK: dirty, but effective trick. Upgrade options only if
+       * the segment to be fragmented was THE FIRST (otherwise,
+       * options are already fixed) and make it ONCE
+       * on the initial skb, so that all the following fragments
+       * will inherit fixed options.
+       */
+
+      if (offset == 0)
+       ip_options_fragment(skb);
+
+      /*
+       *    Added AC : If we are fragmenting a fragment that's not the
+       *           last fragment then keep MF on each bit
+       */
+      if (left > 0 || not_last_frag)
+       iph->frag_off |= htons(IP_MF);
+      ptr += len;
+      offset += len;
+
+      /*
+       *    Put this fragment into the sending queue.
+       */
+
+      iph->tot_len = htons(len + hlen);
+
+      ip_send_check(iph);
+      /*
+       * send it
+       */
+      skb_reset_network_header(skb2);
+#if 0
+      skb2->network_header = skb2->data;
+#endif/* 0 */
+      l2_send_frame(skb2);
+
+    }
+  kfree_skb(skb);
+  return err;
+
+ fail:
+  kfree_skb(skb);
+  return err;
+}
+EXPORT_SYMBOL(mpls_fragment);
+
+int
+mpls_ipip_output (struct sk_buff *skb)
+{
+    int ret = 1;
+
+    if (mpls_output) {
+        ret = mpls_output(&skb);
+    }
+    if (ret < 0) {
+        kfree_skb (skb);
+    }
+    return ret;
+}
+EXPORT_SYMBOL(mpls_ipip_output);
+
+int
+mpls_ip_output (struct sk_buff *skb)
+{
+    int ret = 1;
+
+    if (mpls_output) {
+        ret = mpls_output(&skb);
+    }
+    if (ret < 0) {
+        kfree_skb(skb);
+    }
+#if 0
+    if (ret == 1) {
+        /* pass to ip */
+        ret = skb_dst(skb)->output(skb);
+    } else if (ret < 0) {
+        kfree_skb (skb);
+    }
+#endif/*0*/
+    return ret;
+}
+
+void
+mpls_register_output_hdlr (int (*fn) (struct sk_buff **skb))
+{
+    if (fn) {
+        mpls_output = fn;
+    }
+}
+EXPORT_SYMBOL(mpls_register_output_hdlr);
+
+void
+mpls_unregister_output_hdlr (void)
+{
+    mpls_output = NULL;
+}
+EXPORT_SYMBOL(mpls_unregister_output_hdlr);

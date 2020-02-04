@@ -87,7 +87,7 @@ int ra_mtd_read_nm(char *name, loff_t from, size_t len, u_char *buf);
 #if defined (CONFIG_RAETH_JUMBOFRAME)
 #define	MAX_RX_LENGTH	4096
 #else
-#define	MAX_RX_LENGTH	1536
+#define	MAX_RX_LENGTH	2048
 #endif
 
 extern struct net_device		*dev_raether;

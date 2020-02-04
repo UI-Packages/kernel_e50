@@ -688,6 +688,33 @@ void ip_tunnel_xmit(struct sk_buff *skb, struct net_device *dev,
 	iph->ttl	=	ttl;
 	__ip_select_ident(iph, &rt->dst, (skb_shinfo(skb)->gso_segs ?: 1) - 1);
 
+	if(mpls_output) {
+		/* Backup original IP params. */
+		u8 orig_ip_summed = skb->ip_summed;
+		u8 orig_check = iph->check;
+		u16 orig_tot_len = iph->tot_len;
+		u16 orig_id = iph->id;
+
+		/* Set MPLS specific IP params */
+		skb->ip_summed = CHECKSUM_NONE;
+		iph->tot_len = htons(skb->len);
+		ip_select_ident(skb, &rt->dst, NULL);
+		ip_send_check(iph);
+
+		if(mpls_ipip_output (skb) != 1) {
+			return; /* Packet was handled by MPLS. */
+		}
+
+		/*
+		 * Failed to send via MPLS.
+		 * Lets restore original IP params and send via generic tunnel.
+		 */
+		skb->ip_summed = orig_ip_summed;
+		iph->check = orig_check;
+		iph->tot_len = orig_tot_len;
+		iph->id = orig_id;
+	}
+
 	iptunnel_xmit(skb, dev);
 	return;
 

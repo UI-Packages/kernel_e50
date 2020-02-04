@@ -118,6 +118,9 @@ struct net {
 	struct netns_ipvs	*ipvs;
 	struct sock		*diag_nlsk;
 	atomic_t		rt_genid;
+
+	/* VRF information */
+	void                    *vrf;
 };
 
 /*

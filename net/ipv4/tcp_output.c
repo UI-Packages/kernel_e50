@@ -943,6 +943,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (skb->len != tcp_header_size)
 		tcp_event_data_sent(tp, sk);
 
+	if (mpls_output) {
+		mpls_skb_reset_transit(skb);
+	}
+
 	if (after(tcb->end_seq, tp->snd_nxt) || tcb->seq == tcb->end_seq)
 		TCP_ADD_STATS(sock_net(sk), TCP_MIB_OUTSEGS,
 			      tcp_skb_pcount(skb));

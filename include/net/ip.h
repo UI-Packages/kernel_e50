@@ -460,4 +460,29 @@ extern void	ip_local_error(struct sock *sk, int err, __be32 daddr, __be16 dport,
 extern int ip_misc_proc_init(void);
 #endif
 
+static inline void
+mpls_skb_set_transit(struct sk_buff *skb)
+{
+	skb->cb[47] = 0xff;
+}
+static inline void
+mpls_skb_reset_transit(struct sk_buff *skb)
+{
+	skb->cb[47] = 0;
+}
+static inline int
+mpls_skb_is_transit(struct sk_buff *skb)
+{
+	return ((__u8)(skb->cb[47]) == 0xff) ? 1 : 0;
+}
+
+extern int (*mpls_output) (struct sk_buff **);
+extern int mpls_fragment (struct sk_buff *, int);
+extern int l2_send_frame (struct sk_buff *);
+
+int mpls_ip_output (struct sk_buff *);
+void mpls_register_output_hdlr (int (*fn) (struct sk_buff **));
+void mpls_unregister_output_hdlr (void);
+int mpls_ipip_output (struct sk_buff *);
+
 #endif	/* _IP_H */

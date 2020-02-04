@@ -119,7 +119,7 @@ void apll_xtal_enable(void);
 #if defined (CONFIG_RAETH_JUMBOFRAME)
 #define	MAX_RX_LENGTH	4096
 #else
-#define	MAX_RX_LENGTH	1536
+#define	MAX_RX_LENGTH	2048
 #endif
 
 
@@ -967,7 +967,14 @@ static int rt2880_eth_recv(struct net_device* dev)
 #if defined (CONFIG_RAETH_SKB_RECYCLE_2K)
                 skb = skbmgr_dev_alloc_skb2k();
 #else
+		#if 1 // alloc skb from slab instead of pages to avoid extreme memory
+			  // occupation issue when QoS is applied.
+		skb = alloc_skb(MAX_RX_LENGTH + NET_IP_ALIGN + NET_SKB_PAD, GFP_ATOMIC);
+		if (likely(skb))
+			skb_reserve(skb, NET_SKB_PAD);
+		#else
 		skb = __dev_alloc_skb(MAX_RX_LENGTH + NET_IP_ALIGN, GFP_ATOMIC);
+		#endif
 #endif
 
 		if (unlikely(skb == NULL))
@@ -2342,7 +2349,7 @@ static int ei_change_mtu(struct net_device *dev, int new_mtu)
 	}
 
 #if 1
-	if ( new_mtu > 1510 ) {
+	if ( new_mtu > 2018 ) {
 		return -EINVAL;
 	}
 #else
@@ -3106,7 +3113,14 @@ int ei_open(struct net_device *dev)
 #if defined (CONFIG_RAETH_SKB_RECYCLE_2K)
                 ei_local->netrx0_skbuf[i] = skbmgr_dev_alloc_skb2k();
 #else
+            #if 1 // alloc skb from slab instead of pages to avoid extreme memory
+                // occupation issue when QoS is applied.
+                ei_local->netrx0_skbuf[i] = alloc_skb(MAX_RX_LENGTH + NET_IP_ALIGN + NET_SKB_PAD, GFP_ATOMIC);
+                if (likely(ei_local->netrx0_skbuf[i]))
+                    skb_reserve(ei_local->netrx0_skbuf[i], NET_SKB_PAD);
+            #else
                 ei_local->netrx0_skbuf[i] = dev_alloc_skb(MAX_RX_LENGTH + NET_IP_ALIGN);
+            #endif
 #endif
                 if (ei_local->netrx0_skbuf[i] == NULL ) {
                         printk("rx skbuff buffer allocation failed!");
@@ -3258,8 +3272,6 @@ int ei_open(struct net_device *dev)
 	inc_mac_addr(pdev_raether[3]->dev_addr, 3);
 	inc_mac_addr(pdev_raether[4]->dev_addr, 4);
 
-	inc_mac_addr(dev->dev_addr, 5);
-
 	for(i=0;i<5;i++) {
 #if defined (CONFIG_ETHTOOL) /*&& defined (CONFIG_RAETH_ROUTER)*/
 		pdev_raether[i]->ethtool_ops = &ra_ethtool_pseudo_ops;
@@ -3283,7 +3295,8 @@ int ei_open(struct net_device *dev)
 		inc_mac_addr(dev->dev_addr, 6);
 		register_netdevice(pdev_raether[5]);
 		VirtualIF_open(pdev_raether[5]);
-	}
+	} else
+		inc_mac_addr(dev->dev_addr, 5);
 
 #ifdef CONFIG_RAETH_LRO
 	lan_ip_tmp = nvram_get(RT2860_NVRAM, "lan_ipaddr");
@@ -3778,7 +3791,7 @@ void setup_internal_gsw(void)
 		sysRegWrite(RALINK_ETH_SW_BASE+0x100, 0x2005e30b);//(GE1, Force 1000M/FD, FC ON)
 		mii_mgr_write(31, 0x3600, 0x5e30b);
 	} else {
-		sysRegWrite(RALINK_ETH_SW_BASE+0x100, 0x2105e33b);//(GE1, Force 1000M/FD, FC ON)
+		sysRegWrite(RALINK_ETH_SW_BASE+0x100, 0x2305e33b);//(GE1, Force 1000M/FD, FC ON)
 		mii_mgr_write(31, 0x3600, 0x5e33b);
 	}
 #elif defined (CONFIG_MT7621_FPGA)
