@@ -478,12 +478,7 @@ static int nand_block_checkbad(struct mtd_info *mtd, loff_t ofs, int getchip,
 			       int allowbbt)
 {
 	struct nand_chip *chip = mtd->priv;
-
-	if (!chip->bbt)
-		return chip->block_bad(mtd, ofs, getchip);
-
-	/* Return info from the table */
-	return nand_isbad_bbt(mtd, ofs, allowbbt);
+	return chip->block_bad(mtd, ofs, getchip);
 }
 
 /**
