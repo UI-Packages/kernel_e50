@@ -775,6 +775,7 @@ static int vlan_dev_flow_offload_check(struct flow_offload_hw_path *path)
 {
 	struct net_device *dev = path->dev;
 	struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
+	struct vlan_dev_priv *vlan2 = NULL;
 
 	if (path->flags & FLOW_OFFLOAD_PATH_VLAN)
 		return -EEXIST;
@@ -782,10 +783,21 @@ static int vlan_dev_flow_offload_check(struct flow_offload_hw_path *path)
 	path->flags |= FLOW_OFFLOAD_PATH_VLAN;
 	path->vlan_proto = vlan->vlan_proto;
 	path->vlan_id = vlan->vlan_id;
-	path->dev = vlan->real_dev;
-
-	if (vlan->real_dev->netdev_ops->ndo_flow_offload_check)
-		return vlan->real_dev->netdev_ops->ndo_flow_offload_check(path);
+	
+	vlan2 = vlan_dev_priv(vlan->real_dev);
+	if (vlan2 && vlan2->vlan_id != 0) {
+		path->vlan_id = vlan2->vlan_id;
+		path->vlan_id_2 = vlan->vlan_id;
+		path->dev = vlan2->real_dev;
+		
+		if (vlan2->real_dev->netdev_ops->ndo_flow_offload_check)
+				return vlan2->real_dev->netdev_ops->ndo_flow_offload_check(path);
+	} else {
+		path->dev = vlan->real_dev;
+		
+		if (vlan->real_dev->netdev_ops->ndo_flow_offload_check)
+				return vlan->real_dev->netdev_ops->ndo_flow_offload_check(path);
+	}
 
 	return 0;
 }

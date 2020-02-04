@@ -322,6 +322,9 @@ flowoffload_tg(struct sk_buff *skb, const struct xt_action_param *par)
 		nf_flow_offload_hw_add(xt_net(par), flow, ct);
 		net = xt_net(par);
 		write_pnet(&nf_flowtable.ft_net, net);
+
+		// Using HW offload, no need to keep entry in SW flowtable 
+		flow_offload_dead(flow);
 	}
 
 	return XT_CONTINUE;

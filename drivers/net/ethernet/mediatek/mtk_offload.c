@@ -143,6 +143,11 @@ mtk_foe_prepare_v4(struct mtk_foe_entry *entry,
 		entry->ipv4_hnapt.vlan1 = dest->vlan_id;
 		entry->bfib1.vlan_layer = 1;
 
+		if (dest->vlan_id_2 != 0) {
+			entry->ipv4_hnapt.vlan2 = dest->vlan_id_2;
+			entry->bfib1.vlan_layer++;
+		}
+			
 		switch (dest->vlan_proto) {
 		case htons(ETH_P_8021Q):
 			entry->ipv4_hnapt.bfib1.vpm = 1;
@@ -203,6 +208,8 @@ int mtk_flow_offload(struct mtk_eth *eth,
 		.bfib1.psn = 0,
 	};
 
+	struct mtk_foe_entry *entry = NULL;
+
 	if (otuple->l4proto != IPPROTO_TCP && otuple->l4proto != IPPROTO_UDP)
 		return -EINVAL;
 
@@ -233,13 +240,20 @@ int mtk_flow_offload(struct mtk_eth *eth,
 	if (!mtk_check_entry_available(eth, ohash)){
 		if (!mtk_check_entry_available(eth, ohash + 1))
 			return -EINVAL;
-                ohash += 1;
-        }
-        if (!mtk_check_entry_available(eth, rhash)){
-		if (!mtk_check_entry_available(eth, rhash + 1))
-                        return -EINVAL;
-                rhash += 1;
+		ohash += 1;
 	}
+	entry = &eth->foe_table[ohash];
+	entry->bfib1.state = BIND;
+	
+	if (!mtk_check_entry_available(eth, rhash)){
+		if (!mtk_check_entry_available(eth, rhash + 1)) {
+			entry->bfib1.state = UNBIND;
+			return -EINVAL;
+		}
+		rhash += 1;
+	}
+	entry = &eth->foe_table[rhash];
+	entry->bfib1.state = BIND;
 
 	mtk_foe_set_mac(&orig, dest->eth_src, dest->eth_dest);
 	mtk_foe_set_mac(&reply, src->eth_src, src->eth_dest);

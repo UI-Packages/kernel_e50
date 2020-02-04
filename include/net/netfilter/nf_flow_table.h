@@ -100,6 +100,7 @@ struct flow_offload_hw_path {
 	u8 eth_dest[ETH_ALEN];
 	u16 vlan_proto;
 	u16 vlan_id;
+	u16 vlan_id_2;
 	u16 pppoe_sid;
 };
 

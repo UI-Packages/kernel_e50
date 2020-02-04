@@ -1019,6 +1019,11 @@ static int fe_poll_rx(struct napi_struct *napi, int budget,
 				
 		skb->protocol = eth_type_trans(skb, netdev);
 
+		if (netdev->features & NETIF_F_HW_VLAN_CTAG_RX &&
+		    RX_DMA_TAG & trxd.rxd2 && RX_DMA_VID(trxd.rxd3))
+			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
+					       RX_DMA_VID(trxd.rxd3));
+
 #ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 		if (mtk_offload_check_rx(priv, skb, trxd.rxd4) == 0) {
 #endif
@@ -1626,7 +1631,7 @@ static const char *mtk_foe_packet_type_str[] = {
 #define ei(entry, end)		(MTK_PPE_ENTRY_CNT - (int)(end - entry))
 #define pt(entry)		(mtk_foe_packet_type_str[entry->ipv4_hnapt.bfib1.pkt_type])
 
-static int foe_table_show(struct mtk_eth *eth)
+static int foe_table_show_all(struct mtk_eth *eth)
 {
 	//struct mtk_eth *eth = _eth;
 	struct mtk_foe_entry *entry, *end;
@@ -1673,6 +1678,40 @@ static int foe_table_show(struct mtk_eth *eth)
 	return 0;
 }
 
+int foe_table_show_entry(struct mtk_eth *eth, u32 hash)
+{
+	struct mtk_foe_entry *entry, *end;
+
+	entry = &eth->foe_table[hash];
+
+	__be32 saddr = htonl(entry->ipv4_hnapt.sip);
+	__be32 daddr = htonl(entry->ipv4_hnapt.dip);
+	__be32 nsaddr = htonl(entry->ipv4_hnapt.new_sip);
+	__be32 ndaddr = htonl(entry->ipv4_hnapt.new_dip);
+	unsigned char h_dest[ETH_ALEN];
+	unsigned char h_source[ETH_ALEN];
+
+	*((u32*) h_source) = swab32(entry->ipv4_hnapt.smac_hi);
+	*((u16*) &h_source[4]) = swab16(entry->ipv4_hnapt.smac_lo);
+	*((u32*) h_dest) = swab32(entry->ipv4_hnapt.dmac_hi);
+	*((u16*) &h_dest[4]) = swab16(entry->ipv4_hnapt.dmac_lo);
+	printk(KERN_ERR 
+		   "(%d)|state=%s|type=%s|\n%pI4:%d->%pI4:%d=>%pI4:%d->%pI4:%d|%pM=>%pM|\netype=0x%04x|info1=0x%x|info2=0x%x|\nvlan1=%d|vlan2=%d\n\n",
+		   hash, es(entry), pt(entry),
+		   &saddr, entry->ipv4_hnapt.sport,
+		   &daddr, entry->ipv4_hnapt.dport,
+		   &nsaddr, entry->ipv4_hnapt.new_sport,
+		   &ndaddr, entry->ipv4_hnapt.new_dport, h_source,
+		   h_dest, ntohs(entry->ipv4_hnapt.etype),
+		   entry->ipv4_hnapt.info_blk1,
+		   entry->ipv4_hnapt.info_blk2,
+		   entry->ipv4_hnapt.vlan1,
+		   entry->ipv4_hnapt.vlan2);
+
+	return 0;
+}
+EXPORT_SYMBOL(foe_table_show_entry);
+
 #ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 static int
 fe_flow_offload(enum flow_offload_type type, struct flow_offload *flow,
@@ -1693,9 +1732,6 @@ fe_flow_offload(enum flow_offload_type type, struct flow_offload *flow,
 		return ret;
 	}
 
-	// print offload entry info
-	//foe_table_show(priv);
-	
 	return ret;
 }
 #endif
@@ -1809,7 +1845,9 @@ static int fe_probe(struct platform_device *pdev)
 
 	if (soc->init_data)
 		soc->init_data(soc, netdev);
-	netdev->vlan_features = netdev->hw_features & ~NETIF_F_HW_VLAN_CTAG_TX;
+	netdev->vlan_features = netdev->hw_features &
+				~(NETIF_F_HW_VLAN_CTAG_TX |
+				  NETIF_F_HW_VLAN_CTAG_RX);
 	netdev->features |= netdev->hw_features;
 
 	if (IS_ENABLED(CONFIG_SOC_MT7621))
