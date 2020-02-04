@@ -130,18 +130,6 @@ mtk_w32(struct mtk_eth *eth, u32 val, u32 reg)
 
 #define AC_BASE		    0x1E100000 + 0x2000 // UBNT: Notice this one is not as same as MTK SDK
 
-typedef struct {
-	uint16_t MAGIC_TAG;
-	uint32_t FOE_Entry:14;
-	uint32_t CRSN:5;
-	uint32_t SPORT:4;
-	uint32_t ALG:9;
-#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)	
-	uint16_t SOURCE;
-	uint16_t DEST;
-#endif
-}  __attribute__ ((packed)) PdmaRxDescInfo4;
-
 struct mtk_foe_unbind_info_blk {
 	u32 time_stamp:8;
 	u32 pcnt:16;		/* packet count */

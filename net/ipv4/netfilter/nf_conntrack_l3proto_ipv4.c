@@ -31,6 +31,10 @@
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
 #include <net/netfilter/nf_log.h>
 
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#include "../../nat/hw_nat/ra_nat.h"
+#endif
+
 static int conntrack4_net_id __read_mostly;
 static DEFINE_MUTEX(register_ipv4_hooks);
 
@@ -109,6 +113,15 @@ static unsigned int ipv4_helper(void *priv,
 	help = nfct_help(ct);
 	if (!help)
 		return NF_ACCEPT;
+
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+        if( IS_SPACE_AVAILABLED(skb)  &&
+                ((FOE_MAGIC_TAG(skb) == FOE_MAGIC_PCI) ||
+                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_WLAN) ||
+                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_GE))){
+            FOE_ALG(skb)=1;
+        }
+#endif
 
 	/* rcu_read_lock()ed by nf_hook_thresh */
 	helper = rcu_dereference(help->helper);

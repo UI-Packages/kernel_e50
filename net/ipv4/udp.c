@@ -116,6 +116,10 @@
 #include <net/sock_reuseport.h>
 #include <net/addrconf.h>
 
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#include "../nat/hw_nat/ra_nat.h"
+#endif
+
 struct udp_table udp_table __read_mostly;
 EXPORT_SYMBOL(udp_table);
 
@@ -2295,6 +2299,15 @@ int udp_v4_early_demux(struct sk_buff *skb)
 
 int udp_rcv(struct sk_buff *skb)
 {
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+	if( IS_SPACE_AVAILABLED(skb) &&
+			((FOE_MAGIC_TAG(skb) == FOE_MAGIC_PCI) ||
+			(FOE_MAGIC_TAG(skb) == FOE_MAGIC_WLAN) ||
+			(FOE_MAGIC_TAG(skb) == FOE_MAGIC_GE))){
+		FOE_ALG(skb)=1;
+	}
+#endif
+
 	return __udp4_lib_rcv(skb, &udp_table, IPPROTO_UDP);
 }
 

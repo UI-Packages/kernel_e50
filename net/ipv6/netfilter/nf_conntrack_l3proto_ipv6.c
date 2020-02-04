@@ -34,6 +34,10 @@
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
 #include <net/netfilter/nf_log.h>
 
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#include "../../nat/hw_nat/ra_nat.h"
+#endif
+
 static int conntrack6_net_id;
 static DEFINE_MUTEX(register_ipv6_hooks);
 
@@ -115,6 +119,16 @@ static unsigned int ipv6_helper(void *priv,
 	help = nfct_help(ct);
 	if (!help)
 		return NF_ACCEPT;
+
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+        if( IS_SPACE_AVAILABLED(skb)  &&
+                ((FOE_MAGIC_TAG(skb) == FOE_MAGIC_PCI) ||
+                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_WLAN) ||
+                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_GE))){
+            FOE_ALG(skb)=1;
+        }
+#endif
+
 	/* rcu_read_lock()ed by nf_hook_thresh */
 	helper = rcu_dereference(help->helper);
 	if (!helper)

@@ -415,7 +415,6 @@ ipt_do_table(struct sk_buff *skb,
 		acpar.targinfo = t->data;
 
 		verdict = t->u.kernel.target->target(skb, &acpar);
-		skb->cvm_reserved |= acpar.cvm_reserved;
 		if (verdict == XT_CONTINUE) {
 			/* Target might have changed stuff. */
 			ip = ip_hdr(skb);
@@ -425,6 +424,7 @@ ipt_do_table(struct sk_buff *skb,
 			break;
 		}
 	} while (!acpar.hotdrop);
+	skb->cvm_reserved |= acpar.cvm_reserved;
 
 	xt_write_recseq_end(addend);
 	local_bh_enable();

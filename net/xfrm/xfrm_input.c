@@ -95,8 +95,13 @@ static const struct xfrm_input_afinfo *xfrm_input_get_afinfo(unsigned int family
 	return afinfo;
 }
 
+#if defined (CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)
+int xfrm_rcv_cb(struct sk_buff *skb, unsigned int family, u8 protocol,
+		       int err)
+#else
 static int xfrm_rcv_cb(struct sk_buff *skb, unsigned int family, u8 protocol,
 		       int err)
+#endif		       
 {
 	int ret;
 	const struct xfrm_input_afinfo *afinfo = xfrm_input_get_afinfo(family);
@@ -109,6 +114,9 @@ static int xfrm_rcv_cb(struct sk_buff *skb, unsigned int family, u8 protocol,
 
 	return ret;
 }
+#if defined (CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)
+EXPORT_SYMBOL(xfrm_rcv_cb);
+#endif
 
 void __secpath_destroy(struct sec_path *sp)
 {
@@ -385,8 +393,38 @@ lock:
 
 		if (crypto_done)
 			nexthdr = x->type_offload->input_tail(x, skb);
-		else
+		else {
+#if defined (CONFIG_RALINK_HWCRYPTO_2)
+			if (_ipsec_accel_on_) {
+				if (family == AF_INET) {
+					if (x->type->input(x, skb) == 1) {
+						dev_put(skb->dev);
+						return 0;
+					} else {
+						dev_put(skb->dev);
+						goto drop;
+					}
+				}
+			} else {
+				nexthdr = x->type->input(x, skb);
+			}
+#else /* defined(CONFIG_RALINK_HWCRYPTO_2) */
+#if defined (CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)
+			if (family == AF_INET) {
+				if (x->type->input(x, skb) == 1)
+				{
+					dev_put(skb->dev);
+					return 0;
+				} else {
+					dev_put(skb->dev);
+					goto drop;
+				}
+			}
+			else	
+#endif
 			nexthdr = x->type->input(x, skb);
+#endif /* defined(CONFIG_RALINK_HWCRYPTO_2) */			
+		}
 
 		if (nexthdr == -EINPROGRESS)
 			return 0;

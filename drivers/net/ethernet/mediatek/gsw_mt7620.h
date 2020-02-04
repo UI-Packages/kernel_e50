@@ -87,7 +87,9 @@
 //UBNT - For special tag 4xxx VLAN base
 #define PORT_VID_BASE_ERX	4088
 #define PORT_VID_BASE_ER10X	4084
-#define PORT_VID_BASE(__type__)           ((strcmp(__type__, "e55") == 0) ? PORT_VID_BASE_ER10X : PORT_VID_BASE_ERX)
+#define PORT_VID_BASE(__type__) \
+	((strcmp(__type__, "e55") == 0 || strcmp(__type__, "e56") == 0) ? \
+	PORT_VID_BASE_ER10X : PORT_VID_BASE_ERX)
 #define SWITCH_VID			4094
 
 #define sys_reg_read(phys)	 (__raw_readl((void __iomem *)phys))

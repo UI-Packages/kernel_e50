@@ -456,6 +456,16 @@
 		interrupts = <GIC_SHARED 23 IRQ_TYPE_LEVEL_HIGH>;
 	};
 
+  crypto: crypto@1e004000 {
+		status = "okay";
+
+		compatible = "mediatek,mtk-eip93";
+		reg = <0x1e004000 0x1000>;
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SHARED 19 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
 	pcie: pcie@1e140000 {
 		compatible = "mediatek,mt7621-pci";
 		reg = <0x1e140000 0x100

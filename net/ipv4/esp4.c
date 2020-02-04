@@ -20,6 +20,22 @@
 
 #include <linux/highmem.h>
 
+#if defined(CONFIG_RALINK_HWCRYPTO_2) || defined(CONFIG_RALINK_HWCRYPTO) || \
+defined(CONFIG_RALINK_HWCRYPTO_MODULE)
+extern int 
+ipsec_esp_output(
+	struct xfrm_state *x, 
+	struct sk_buff *skb
+);
+extern int 
+ipsec_esp_input(
+	struct xfrm_state *x, 
+	struct sk_buff *skb
+);
+#endif
+
+#if defined(CONFIG_RALINK_HWCRYPTO_2) || \
+!(defined(CONFIG_RALINK_HWCRYPTO) || defined(CONFIG_RALINK_HWCRYPTO_MODULE))
 struct esp_skb_cb {
 	struct xfrm_skb_cb xfrm;
 	void *tmp;
@@ -756,6 +772,8 @@ skip_cow:
 out:
 	return err;
 }
+#endif /* defined(CONFIG_RALINK_HWCRYPTO_2) || 
+!(defined(CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)) */
 
 static u32 esp4_get_mtu(struct xfrm_state *x, int mtu)
 {
@@ -1003,6 +1021,24 @@ static int esp4_rcv_cb(struct sk_buff *skb, int err)
 	return 0;
 }
 
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+int ipsec_esp_output_2(struct xfrm_state *x, struct sk_buff *skb)
+{
+	if (_ipsec_accel_on_)
+		return ipsec_esp_output(x, skb);
+	else
+		return esp_output(x, skb);
+}
+
+int ipsec_esp_input_2(struct xfrm_state *x, struct sk_buff *skb)
+{
+	if (_ipsec_accel_on_)
+		return ipsec_esp_input(x, skb);
+	else
+		return esp_input(x, skb);
+}
+#endif
+
 static const struct xfrm_type esp_type =
 {
 	.description	= "ESP4",
@@ -1012,8 +1048,18 @@ static const struct xfrm_type esp_type =
 	.init_state	= esp_init_state,
 	.destructor	= esp_destroy,
 	.get_mtu	= esp4_get_mtu,
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+	.input		= ipsec_esp_input_2,
+	.output		= ipsec_esp_output_2
+#else
+#if defined(CONFIG_RALINK_HWCRYPTO) || defined(CONFIG_RALINK_HWCRYPTO_MODULE)
+	.input		= ipsec_esp_input,
+	.output		= ipsec_esp_output
+#else
 	.input		= esp_input,
-	.output		= esp_output,
+	.output		= esp_output
+#endif
+#endif
 };
 
 static struct xfrm4_protocol esp4_protocol = {

@@ -911,7 +911,8 @@ mtk_nand_exec_read_page(struct mtd_info *mtd, u32 u4RowAddr, u32 u4PageSize, u8 
 			if(g_bHwEcc && !mtk_nand_check_dececc_done(j+1))
 				bRet = false;
 			if(g_bHwEcc && !mtk_nand_check_bch_error(mtd, buf+j*512, j, u4RowAddr))
-				bRet = false;
+				// UBNT: bret=true when bch error, EBADMSG is returned by nand_base.c when uncorrected ECC errors.
+				; //bRet = false;
 		}
 		if (!mtk_nand_status_ready(STA_NAND_BUSY))
 			bRet = false;
@@ -2142,7 +2143,9 @@ static int mtk_nand_load_dtb_overlay(void)
 	size_t dtb_offset = 0;
 
 	printk("  Device type: %s\n", ubnt_bd_g.type);
-	if (strcmp(ubnt_bd_g.type, "e600") == 0 || strcmp(ubnt_bd_g.type, "e55") == 0) {
+	if (strcmp(ubnt_bd_g.type, "e600") == 0
+			|| strcmp(ubnt_bd_g.type, "e55") == 0
+			|| strcmp(ubnt_bd_g.type, "e56") == 0) {
 		dtb_offset = 0x10000;
 	}
 	printk("  dtb overlay offset: %x\n", dtb_offset);
@@ -2427,8 +2430,15 @@ mtk_nand_probe(struct platform_device *pdev)
 //		shift_on_bbt = 1;
 		if (load_fact_bbt(mtd) == 0) {
 			int i;
-			for (i = 0; i < 0x100; i++)
+			int total_block, bbt_size;
+
+			total_block = 1 << (nand_chip->chip_shift - nand_chip->phys_erase_shift);
+			bbt_size = total_block >> 2;
+
+			for (i = 0; i < bbt_size; i++)
+			{
 				nand_chip->bbt[i] |= fact_bbt[i];
+			}
 		}
 
 		read_ubnt_bd(&ubnt_bd_g);
@@ -2487,7 +2497,7 @@ mtk_nand_init(void)
 
 	//UBNT - Start device tree overlay before mtd partitions be created
 	get_model(model);
-	if(strncmp(model, "e55", 3) == 0) {
+	if (strncmp(model, "e55", 3) == 0 || strncmp(model, "e56", 3) == 0) {
 		printk("Start device tree overlay before mtd partitions be created!!\n");
 		offset = 0x10000;
 		mtk_nand_load_dtb_overlay_early(offset);

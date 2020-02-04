@@ -77,6 +77,10 @@
 #include <asm/unaligned.h>
 #include <linux/errqueue.h>
 
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#include "../nat/hw_nat/ra_nat.h"
+#endif
+
 int sysctl_tcp_fack __read_mostly;
 int sysctl_tcp_max_reordering __read_mostly = 300;
 int sysctl_tcp_dsack __read_mostly = 1;
@@ -5370,6 +5374,15 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 {
 	unsigned int len = skb->len;
 	struct tcp_sock *tp = tcp_sk(sk);
+
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+	if (IS_SPACE_AVAILABLED(skb) &&
+			((FOE_MAGIC_TAG(skb) == FOE_MAGIC_PCI) ||
+			(FOE_MAGIC_TAG(skb) == FOE_MAGIC_WLAN) ||
+			(FOE_MAGIC_TAG(skb) == FOE_MAGIC_GE))){
+		FOE_ALG(skb)=1;
+	}
+#endif
 
 	tcp_mstamp_refresh(tp);
 	if (unlikely(!sk->sk_rx_dst))

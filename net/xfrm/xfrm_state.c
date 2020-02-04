@@ -28,6 +28,14 @@
 
 #include "xfrm_hash.h"
 
+#if (defined(CONFIG_RALINK_HWCRYPTO_2) || defined(CONFIG_RALINK_HWCRYPTO) || \
+defined(CONFIG_RALINK_HWCRYPTO_MODULE)) && defined(CONFIG_INET_ESP)
+extern void
+ipsec_eip93Adapter_free(
+		    unsigned int spi
+		);
+#endif
+
 #define xfrm_state_deref_prot(table, net) \
 	rcu_dereference_protected((table), lockdep_is_held(&(net)->xfrm.xfrm_state_lock))
 
@@ -627,6 +635,22 @@ int __xfrm_state_delete(struct xfrm_state *x)
 		 */
 		xfrm_state_put(x);
 		err = 0;
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+		if (_ipsec_accel_on_) {
+			if (x->type != NULL) {
+				if (x->type->description[3] == '4')
+					ipsec_eip93Adapter_free(x->id.spi);
+			}
+		}
+#else /* defined(CONFIG_RALINK_HWCRYPTO_2) */
+#if (defined (CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)) && defined (CONFIG_INET_ESP)
+		if (x->type != NULL) {
+			if (x->type->description[3] == '4')
+        		ipsec_eip93Adapter_free(x->id.spi);
+		}	
+#endif
+#endif /* defined(CONFIG_RALINK_HWCRYPTO_2) */
+
 	}
 
 	return err;

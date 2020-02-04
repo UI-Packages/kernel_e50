@@ -186,6 +186,7 @@ xt_flowoffload_skip(struct sk_buff *skb)
 		return true;
 	if (skb_sec_path(skb))
 		return true;
+
 	return false;
 }
 
@@ -252,32 +253,6 @@ flowoffload_tg(struct sk_buff *skb, const struct xt_action_param *par)
 	ct = nf_ct_get(skb, &ctinfo);
 	if (ct == NULL)
 		return XT_CONTINUE;
-
-#ifdef CONFIG_DTB_UBNT_ER
-	// Skip offload when there's application configured which can't work with
-	// offload feature, ex. netflow
-	// Set IPS_HELPER_BIT flag in CT object to ignore offload for both
-	// directions.
-	if (skb->cvm_reserved & SKB_CVM_RESERVED_MASK) {
-		set_bit(IPS_HELPER_BIT, &ct->status);
-		return XT_CONTINUE;
-	}
-
-	// If there's QDISC set on interface, and it's "noqueue" or "pfifo_fast",
-	// we still do hardware offload.
-	// For other QDISC types, skip hardware offload.
-	if (xt_in(par) && xt_in(par)->qdisc && xt_in(par)->qdisc->ops) {
-		if (xt_in(par)->qdisc->ops != &noqueue_qdisc_ops &&
-				xt_in(par)->qdisc->ops != &pfifo_fast_ops)
-			return XT_CONTINUE;
-	}
-	if (xt_out(par) && xt_out(par)->qdisc && xt_out(par)->qdisc->ops) {
-		if (xt_out(par)->qdisc->ops != &noqueue_qdisc_ops &&
-				xt_out(par)->qdisc->ops != &pfifo_fast_ops)
-			return XT_CONTINUE;
-	}
-#endif /* CONFIG_DTB_UBNT_ER */
-
 
 	switch (ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum) {
 	case IPPROTO_TCP:

@@ -46,7 +46,14 @@
 #include <linux/of_address.h>
 #include <linux/if_vlan.h>
 
+#ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 #include "mtk_offload.h"
+#endif
+
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+#include "../../../net/nat/hw_nat/ra_nat.h"
+#include "../../../net/nat/hw_nat/foe_fdb.h"
+#endif
 
 #define	MAX_RX_LENGTH		2048
 #define FE_RX_ETH_HLEN		(VLAN_ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN)
@@ -69,6 +76,30 @@
 
 #define SYSC_REG_RSTCTRL	0x34
 
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+struct PDMA_TXD_INFO4_T {
+	unsigned int VLAN_TAG:17;	/* INSV(1)+VPRI(3)+CFI(1)+VID(12) */
+	unsigned int RESV:2;
+	unsigned int UDF:6;
+	unsigned int FPORT:3;
+	unsigned int TSO:1;
+	unsigned int TUI_CO:3;
+};
+
+struct PDMA_RXD_INFO4_T {
+	unsigned int FOE_ENTRY:14;
+	unsigned int CRSN:5;
+	unsigned int SP:4;
+	unsigned int L4F:1;
+	unsigned int L4VLD:1;
+	unsigned int TACK:1;
+	unsigned int IP4F:1;
+	unsigned int IP4:1;
+	unsigned int IP6:1;
+	unsigned int UN_USE1:3;
+};
+#endif
+
 extern uint8_t ag_map[6][7];
 
 extern struct ubnt_bd_t ubnt_bd_g;
@@ -78,6 +109,10 @@ extern struct mt7620_gsw *gsw_mt7621;
 extern u32 _mt7620_mii_read(struct mt7620_gsw * gsw, int phy_addr, int phy_reg);
 extern u32 _mt7620_mii_write(struct mt7620_gsw * gsw, u32 phy_addr, u32 phy_register, u32 write_data);
 int mt7621_is_switch0_member(u32 port);
+#if !defined(CONFIG_RA_NAT_NONE)
+extern int (*ra_sw_nat_hook_rx)(struct sk_buff *skb);
+extern int (*ra_sw_nat_hook_tx)(struct sk_buff *skb, int gmac_no);
+#endif
 
 u32 switched_ports = 0;
 u8 vlan_aware_enabled = 0;
@@ -155,6 +190,7 @@ int mt7621_is_switch0_member(u32 port)
 		return 1;
 	return 0;
 }
+EXPORT_SYMBOL(mt7621_is_switch0_member);
 
 void fe_w32(u32 val, unsigned reg)
 {
@@ -493,15 +529,6 @@ void fe_stats_update(struct fe_priv *priv)
 	struct fe_hw_stats *hwstats = priv->hw_stats;
 	unsigned int base = fe_reg_table[FE_REG_FE_COUNTER_BASE];
 	u64 stats;
-	char port_name[8] = {0};
-	u32 port;
-	struct net_device *switch_dev;
-	struct rtnl_link_stats64 switch_temp;
-	const struct rtnl_link_stats64 *switch_stats;
-	struct net_device *port_dev;
-	struct rtnl_link_stats64 port_temp;
-	const struct rtnl_link_stats64 *port_stats;
-	u64 tmp_rx_bytes, tmp_tx_bytes;
 
 	u64_stats_update_begin(&hwstats->syncp);
 
@@ -697,6 +724,9 @@ static int fe_tx_map_dma(struct sk_buff *skb, struct net_device *dev,
 	unsigned int nr_frags;
 	u32 def_txd4;
 	int i, j, k, frag_size, frag_map_size, offset;
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)	
+	struct PDMA_TXD_INFO4_T *txd4_tmp;
+#endif
 
 	tx_buf = &ring->tx_buf[ring->tx_next_idx];
 	memset(tx_buf, 0, sizeof(*tx_buf));
@@ -724,6 +754,22 @@ static int fe_tx_map_dma(struct sk_buff *skb, struct net_device *dev,
 				((tag >> VLAN_PRIO_SHIFT) << 4) |
 				(tag & 0xF);
 	}
+
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+	if(FOE_MAGIC_TAG(skb) == FOE_MAGIC_PPE) {
+		if(ra_sw_nat_hook_rx!= NULL){
+#if defined (CONFIG_RALINK_MT7620)
+			ei_local->tx_ring0[tx_cpu_owner_idx0].txd_info4.FP_BMAP = (1 << 7); /* PPE */
+#elif defined (CONFIG_RALINK_MT7621)
+			txd4_tmp = (struct PDMA_TXD_INFO4_T *)&ring->tx_dma->txd4;
+			txd4_tmp->FPORT = 4; /* PPE */
+#else
+			ei_local->tx_ring0[tx_cpu_owner_idx0].txd_info4.PN = 6; /* PPE */
+#endif
+			FOE_MAGIC_TAG(skb) = 0;
+		}
+	}
+#endif
 
 	/* TSO: fill MSS info in tcp checksum field */
 	if (skb_is_gso(skb)) {
@@ -924,6 +970,22 @@ static int fe_start_xmit(struct sk_buff *skb, struct net_device *dev)
            skb_vlan_pop(skb);
 	}
 
+#if !defined(CONFIG_RA_NAT_NONE)
+	if(ra_sw_nat_hook_tx!= NULL)
+	{
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+		if(FOE_MAGIC_TAG(skb) != FOE_MAGIC_PPE) 
+#endif
+		{
+			if ( ra_sw_nat_hook_tx(skb, 1) == 1 ) {
+			} else {
+				kfree_skb(skb);
+				return 0;
+			}
+		}
+	}
+#endif
+
 	if (fe_tx_map_dma(skb, dev, tx_num, ring) < 0) {
 		stats->tx_dropped++;
 	} else {
@@ -947,7 +1009,7 @@ static int fe_poll_rx(struct napi_struct *napi, int budget,
 	u8 *data, *new_data;
 	struct fe_rx_dma *rxd, trxd;
 	int done = 0, pad;
-	u16 vlan_tci = 0;
+	u16 vlan_tci = 0, vlan_id = 0;
 
 	if (netdev->features & NETIF_F_RXCSUM)
 		checksum_bit = soc->checksum_bit;
@@ -1005,34 +1067,57 @@ static int fe_poll_rx(struct napi_struct *napi, int budget,
 		else
 			skb_checksum_none_assert(skb);
 
+#ifdef CONFIG_DTB_UBNT_ER
+		if(!__vlan_get_tag(skb, &vlan_tci))
+			vlan_id = vlan_tci & VLAN_VID_MASK;
+#endif
+
+#ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN		
 		if(vlan_aware_enabled == 1) {
-			__vlan_get_tag(skb, &vlan_tci);
-			if (vlan_tci > 0 && vlan_tci < PORT_VID_BASE(ubnt_bd_g.type)) {
+			if (vlan_id > 0 && vlan_id < PORT_VID_BASE(ubnt_bd_g.type)) {
 				// Insert VID 0xffe when
 				// 1. vlan_aware is enabled and
 				// 2. VID of RX packet isn't in range of reserverd VID
-				skb = vlan_insert_tag(skb, htons(ETH_P_8021Q), 0xffe);
+				skb = vlan_insert_tag(skb, htons(ETH_P_8021Q), SWITCH_VID);
 				if (!skb)
 					goto release_desc;
 			}
 		}
-				
+#endif		
+
 		skb->protocol = eth_type_trans(skb, netdev);
+		
+#if defined (CONFIG_RA_HW_NAT)  || defined (CONFIG_RA_HW_NAT_MODULE)
+		if(ra_sw_nat_hook_rx != NULL) {
+		    FOE_MAGIC_TAG(skb)= FOE_MAGIC_GE;
+		    *(uint32_t *)(FOE_INFO_START_ADDR(skb)+2) = *(uint32_t *)&ring->rx_dma[idx].rxd4;
+		    FOE_ALG(skb) = 0;
 
-		if (netdev->features & NETIF_F_HW_VLAN_CTAG_RX &&
-		    RX_DMA_TAG & trxd.rxd2 && RX_DMA_VID(trxd.rxd3))
-			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
-					       RX_DMA_VID(trxd.rxd3));
-
-#ifdef CONFIG_NET_MEDIATEK_OFFLOAD
-		if (mtk_offload_check_rx(priv, skb, trxd.rxd4) == 0) {
+			// Vlan interface, hwnat need to know the source port for tx/rx counting
+			if( vlan_id )
+				FOE_SP(skb) = vlan_id - PORT_VID_BASE(ubnt_bd_g.type);
+		}
 #endif
+		
+/* ra_sw_nat_hook_rx return 1 --> continue
+ * ra_sw_nat_hook_rx return 0 --> FWD & without netif_rx
+ */
+#if !defined(CONFIG_RA_NAT_NONE) && (defined (CONFIG_RA_HW_NAT)  || defined (CONFIG_RA_HW_NAT_MODULE))
+		if((ra_sw_nat_hook_rx == NULL) || 
+			(ra_sw_nat_hook_rx!= NULL && ra_sw_nat_hook_rx(skb)))
+#else		
+#ifdef CONFIG_NET_MEDIATEK_OFFLOAD
+		if (mtk_offload_check_rx(priv, skb, trxd.rxd4) == 0)
+#endif
+#endif
+		{
 			stats->rx_packets++;
 			stats->rx_bytes += pktlen;
 
 			napi_gro_receive(napi, skb);
-#ifdef CONFIG_NET_MEDIATEK_OFFLOAD
-		} else {
+		} 
+#ifdef CONFIG_NET_MEDIATEK_OFFLOAD		
+		else {
 			dev_kfree_skb(skb);
 		}
 #endif
@@ -1345,7 +1430,7 @@ static int fe_open(struct net_device *dev)
 {
 	struct fe_priv *priv = netdev_priv(dev);
 	unsigned long flags;
-	u32 val;
+	u32 val, reg;
 	int err;
 
 	err = fe_init_dma(priv);
@@ -1377,6 +1462,12 @@ static int fe_open(struct net_device *dev)
 	mtk_ppe_probe(priv);
 #endif
 
+#ifdef CONFIG_DTB_UBNT_ER
+	// Start flow control and add ON2OFF support
+	mii_mgr_read(0x1f, 0x1fe0, &reg);
+	mii_mgr_write(0x1f, 0x1fe0, reg | BIT(31) | BIT(28));
+#endif
+
 	return 0;
 }
 
@@ -1385,6 +1476,13 @@ static int fe_stop(struct net_device *dev)
 	struct fe_priv *priv = netdev_priv(dev);
 	unsigned long flags;
 	int i;
+	u32 reg;
+
+#ifdef CONFIG_DTB_UBNT_ER
+	// Disable flow control
+	mii_mgr_read(0x1f, 0x1fe0, &reg);
+	mii_mgr_write(0x1f, 0x1fe0, reg & ~(BIT(31)));
+#endif
 
 	netif_tx_disable(dev);
 	fe_int_disable(priv->soc->tx_int | priv->soc->rx_int);
@@ -1580,11 +1678,13 @@ static int fe_change_mtu(struct net_device *dev, int new_mtu)
 	if (old_mtu > ETH_DATA_LEN && new_mtu > ETH_DATA_LEN)
 		return 0;
 
+#if !defined(CONFIG_DTB_UBNT_ER)
 	if (new_mtu <= ETH_DATA_LEN)
 		priv->rx_ring.frag_size = fe_max_frag_size(ETH_DATA_LEN);
 	else
 		priv->rx_ring.frag_size = PAGE_SIZE;
 	priv->rx_ring.rx_buf_size = fe_max_buf_size(priv->rx_ring.frag_size);
+#endif
 
 	if (!netif_running(dev))
 		return 0;
@@ -1606,6 +1706,7 @@ static int fe_change_mtu(struct net_device *dev, int new_mtu)
 	return fe_open(dev);
 }
 
+#ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 static const char *mtk_foe_entry_state_str[] = {
 	"INVALID",
 	"UNBIND",
@@ -1711,6 +1812,7 @@ int foe_table_show_entry(struct mtk_eth *eth, u32 hash)
 	return 0;
 }
 EXPORT_SYMBOL(foe_table_show_entry);
+#endif
 
 #ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 static int
@@ -1845,9 +1947,7 @@ static int fe_probe(struct platform_device *pdev)
 
 	if (soc->init_data)
 		soc->init_data(soc, netdev);
-	netdev->vlan_features = netdev->hw_features &
-				~(NETIF_F_HW_VLAN_CTAG_TX |
-				  NETIF_F_HW_VLAN_CTAG_RX);
+	netdev->vlan_features = netdev->hw_features & ~NETIF_F_HW_VLAN_CTAG_TX;
 	netdev->features |= netdev->hw_features;
 
 	if (IS_ENABLED(CONFIG_SOC_MT7621))

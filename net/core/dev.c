@@ -3488,7 +3488,8 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 
 	trace_net_dev_queue(skb);
 	if (q->enqueue) {
-		skb->cvm_reserved |= SKB_CVM_RESERVED_4;
+		if (q->ops != &pfifo_fast_ops)
+			skb->cvm_reserved |= SKB_CVM_RESERVED_4;
 		rc = __dev_xmit_skb(skb, q, dev, txq);
 		goto out;
 	}

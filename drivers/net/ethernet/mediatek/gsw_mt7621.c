@@ -54,6 +54,28 @@ int init_rtl8367s(void);
 void set_rtl8367s_rgmii(void);
 #endif
 
+#ifdef CONFIG_DTB_UBNT_ER
+void update_flow_control_status_handler(unsigned long unused);
+struct timer_list update_flow_control_status_timer;
+
+void update_flow_control_status_handler(unsigned long unused)
+{
+	u32 reg;
+
+	reg = mt7530_mdio_r32(gsw_mt7621, 0x1fe0);
+
+	if(!(reg & BIT(31))) {
+		// Restart flow control add ON2OFF support
+		mt7530_mdio_w32(gsw_mt7621, 0x1fe0, reg | BIT(31) | BIT(28));
+
+		// Clear interrupt status
+		mt7530_mdio_w32(gsw_mt7621, 0x700c, BIT(17));
+	} else {
+		mod_timer(&update_flow_control_status_timer, jiffies + HZ);
+	}
+}
+#endif
+
 void reg_bit_zero(void __iomem *addr, unsigned int bit, unsigned int len)
 {
 	int reg_val;
@@ -96,7 +118,7 @@ static irqreturn_t gsw_interrupt_mt7621(int irq, void *_priv)
 
 	reg = mt7530_mdio_r32(gsw, 0x700c);
 
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < 5; i++) {
 		if (reg & BIT(i)) {
 			unsigned int link;
 
@@ -111,8 +133,11 @@ static irqreturn_t gsw_interrupt_mt7621(int irq, void *_priv)
 					netdev_info(priv->netdev,
 						    "port %d link up\n", i);
 
-					if(!dev)
-						goto interrupt_out;
+					if(!dev) {
+						printk(KERN_ERR "%s: dev(link-up) = NULL\n", __func__);
+						mt7530_mdio_w32(gsw, 0x700c, 0x1f);
+						return IRQ_HANDLED;
+					}
 					else
 						netif_carrier_on(dev);
 				}
@@ -120,18 +145,44 @@ static irqreturn_t gsw_interrupt_mt7621(int irq, void *_priv)
 					netdev_info(priv->netdev,
 						    "port %d link down\n", i);
 					
-					if(!dev)
-						goto interrupt_out;
+					if(!dev) {
+						printk(KERN_ERR "%s: dev(link-down) = NULL\n", __func__);
+						mt7530_mdio_w32(gsw, 0x700c, 0x1f);
+						return IRQ_HANDLED;
+					}
 					else
 						netif_carrier_off(dev);
 				}
 				dev_put(dev);
 			}
+			mt7530_mdio_w32(gsw, 0x700c, BIT(i));
 		}
+	}
 
-interrupt_out:
-	mt7620_handle_carrier(priv);
-	mt7530_mdio_w32(gsw, 0x700c, 0x1f);
+	// For transmit queue 0 timed out issue
+	// Free buffer lower than low water mark
+	if (reg & BIT(17)) {
+		printk(KERN_WARNING "Warning - free internal queue memory lower than low water mark!!\n");
+		
+		// Disable flow control
+		reg = mt7530_mdio_r32(gsw, 0x1fe0);
+		mt7530_mdio_w32(gsw, 0x1fe0, reg & ~(BIT(31)));
+
+		// Make sure flow control has been disabled
+		reg = mt7530_mdio_r32(gsw, 0x1fe0);
+
+		if(!(reg & BIT(31))) {
+			// Restart flow control add ON2OFF support
+			reg = mt7530_mdio_r32(gsw, 0x1fe0);
+			mt7530_mdio_w32(gsw, 0x1fe0, reg | BIT(31) | BIT(28));
+
+			// Clear interrupt status
+			mt7530_mdio_w32(gsw, 0x700c, BIT(17));
+		} else {
+			// Flow control didn't disable yet. Add timer to handle it.
+			mod_timer(&update_flow_control_status_timer, jiffies + HZ);
+		}
+	}
 
 	return IRQ_HANDLED;
 }
@@ -416,7 +467,13 @@ static void mt7621_hw_init(struct mt7620_gsw *gsw, struct device_node *np)
 
 	/* (GE1, Force 1000M/FD, FC ON) */
 	sys_reg_write((fe_base + 0x10000) + 0x100, 0x2305e33b);
-	mt7530_mdio_w32(gsw, 0x3600, 0x5e33b);
+	/*
+	 * Disable TX/RX flow control on CPU port
+	 * which makes the internal hardware circuit queue got full
+	 * and then would cause the hardware can't serve
+	 * following incoming packets and can't send TX complete interrupt on time.
+	 */
+	mt7530_mdio_w32(gsw, 0x3600, 0x5e30b);
 	reg_value = mt7530_mdio_r32(gsw, 0x3600);
 	/* (GE2, Link down) */
 	sys_reg_write((fe_base + 0x10000) + 0x200, 0x00008000);
@@ -429,18 +486,23 @@ static void mt7621_hw_init(struct mt7620_gsw *gsw, struct device_node *np)
 	reg_value |= (1 << 6);	/* Disable Port 5 */
 	reg_value |= (1 << 13);	/* Port 5 as GMAC, no Internal PHY */
 
-	//UBNT_Andrew 2018/05/04 - RTL8367 is connected to P5. So I changed RGMII2 mode to GPIO mode
-	/*RGMII2=Normal mode */
-	//reg_bit_zero(RALINK_SYSCTL_BASE + 0x60, 15, 1);
+	// Changed RGMII2 mode to GPIO mode
 	reg_bit_one(fe_sysctl_base + 0x60, 15, 1);
-	//UBNT_Andrew
 
 	/*GMAC2= RGMII mode */
 	reg_bit_zero((fe_sysctl_base + 0x14), 14, 2);
-	/* MT7530 P5 Force 1000 */
-	mt7530_mdio_w32(gsw, 0x3500, 0x5e33b);
-	/* (GE2, Force 1000) */
-	sys_reg_write((fe_base + 0x10000) + 0x200, 0x2305e33b);
+	
+  	if (!strcmp(ubnt_bd_g.type, "e50")) {
+		// Disbale MT7530 P5
+		mt7530_mdio_w32(gsw, 0x3500, 0x8000);
+		
+		/* (GE2, Force 1000) */
+		sys_reg_write((fe_base + 0x10000) + 0x200, 0x2305e33b);
+	} else {
+		/* MT7530 P5 Force 1000 */
+		mt7530_mdio_w32(gsw, 0x3500, 0x5e33b);
+	} 
+
 	reg_value &= ~(1 << 6);	/* enable MT7530 P5 */
 	reg_value |= ((1 << 7) | (1 << 13) | (1 << 16));
 
@@ -483,38 +545,16 @@ static void mt7621_hw_init(struct mt7620_gsw *gsw, struct device_node *np)
 	reg_value = 0x855;
 	mt7530_mdio_w32(gsw, 0x7a78, reg_value);
 
-	mt7530_mdio_w32(gsw, 0x7b00, 0x104);	/* delay setting for 10/1000M */
+	mt7530_mdio_w32(gsw, 0x7b00, 0x102);	/* delay setting for 10/1000M */
 	mt7530_mdio_w32(gsw, 0x7b04, 0x10);	/* delay setting for 10/1000M */
 
 	/*Tx Driving */
-	mt7530_mdio_w32(gsw, 0x7a54, 0x88);	/* lower GE1 driving */
-	mt7530_mdio_w32(gsw, 0x7a5c, 0x88);	/* lower GE1 driving */
-	mt7530_mdio_w32(gsw, 0x7a64, 0x88);	/* lower GE1 driving */
-	mt7530_mdio_w32(gsw, 0x7a6c, 0x88);	/* lower GE1 driving */
-	mt7530_mdio_w32(gsw, 0x7a74, 0x88);	/* lower GE1 driving */
-	mt7530_mdio_w32(gsw, 0x7a7c, 0x88);	/* lower GE1 driving */
-	mt7530_mdio_w32(gsw, 0x7810, 0x11);	/* lower GE2 driving */
-	/*Set MT7623 TX Driving */
-	sys_reg_write((fe_base + 0x10000) + 0x0354, 0x88);
-	sys_reg_write((fe_base + 0x10000) + 0x035c, 0x88);
-	sys_reg_write((fe_base + 0x10000) + 0x0364, 0x88);
-	sys_reg_write((fe_base + 0x10000) + 0x036c, 0x88);
-	sys_reg_write((fe_base + 0x10000) + 0x0374, 0x88);
-	sys_reg_write((fe_base + 0x10000) + 0x037c, 0x88);
-
-	/* Set GE2 driving and slew rate */
-	sys_reg_write((void __iomem *)gpio_base_virt + 0xf00, 0xa00);
-	/* set GE2 TDSEL */
-	sys_reg_write((void __iomem *)gpio_base_virt + 0x4c0, 0x5);
-	/* set GE2 TUNE */
-	sys_reg_write((void __iomem *)gpio_base_virt + 0xed0, 0);
-
-	sys_reg_write((fe_base + 0x10000) + 0x0350, 0x55);
-	sys_reg_write((fe_base + 0x10000) + 0x0358, 0x55);
-	sys_reg_write((fe_base + 0x10000) + 0x0360, 0x55);
-	sys_reg_write((fe_base + 0x10000) + 0x0368, 0x55);
-	sys_reg_write((fe_base + 0x10000) + 0x0370, 0x55);
-	sys_reg_write((fe_base + 0x10000) + 0x0378, 0x855);
+	mt7530_mdio_w32(gsw, 0x7a54, 0x44);	/* lower GE1 driving */
+	mt7530_mdio_w32(gsw, 0x7a5c, 0x44);	/* lower GE1 driving */
+	mt7530_mdio_w32(gsw, 0x7a64, 0x44);	/* lower GE1 driving */
+	mt7530_mdio_w32(gsw, 0x7a6c, 0x44);	/* lower GE1 driving */
+	mt7530_mdio_w32(gsw, 0x7a74, 0x44);	/* lower GE1 driving */
+	mt7530_mdio_w32(gsw, 0x7a7c, 0x44);	/* lower GE1 driving */
 
 	mt7530_phy_setting(gsw);
 	for (i = 0; i <= 4; i++) {
@@ -558,7 +598,9 @@ int mtk_gsw_init(struct fe_priv *priv)
 	if (gsw->irq) {
 		request_irq(gsw->irq, gsw_interrupt_mt7621, 0,
 			    "gsw", priv);
-		mt7530_mdio_w32(gsw, 0x7008, 0x1f);
+
+		// Interrupt supports queue memory low water warning and link status change
+		mt7530_mdio_w32(gsw, 0x7008, 0x2001f);
 	}
 
 #ifdef CONFIG_DTB_UBNT_ER
@@ -611,7 +653,8 @@ int mtk_gsw_init(struct fe_priv *priv)
 	mt7530_mdio_w32(gsw_mt7621, 0x94, 0x40600001);
 	mt7530_mdio_w32(gsw_mt7621, 0x90, PORT_VID_BASE(ubnt_bd_g.type) + 0x80001005);
 		
-	if(strcmp(ubnt_bd_g.type, "e55") == 0) {
+	if (strcmp(ubnt_bd_g.type, "e55") == 0
+			|| strcmp(ubnt_bd_g.type, "e56") == 0) {
 		mt7530_mdio_w32(gsw_mt7621, 0x94, 0x40600001);
 		mt7530_mdio_w32(gsw_mt7621, 0x90, PORT_VID_BASE(ubnt_bd_g.type) + 0x80001006);
 
@@ -632,7 +675,8 @@ int mtk_gsw_init(struct fe_priv *priv)
 #endif /* CONFIG_DTB_UBNT_ER */
 
 #ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN
-	if(strcmp(ubnt_bd_g.type, "e55") == 0) {
+	if (strcmp(ubnt_bd_g.type, "e55") == 0
+			|| strcmp(ubnt_bd_g.type, "e56") == 0) {
 		set_rtl8367s_rgmii();
 
 		rtk_int_polarity_set(INT_POLAR_END);
@@ -980,22 +1024,25 @@ static int mt7621_gsw_probe(struct platform_device *pdev)
 	gsw->dev = &pdev->dev;
 	gsw->irq = platform_get_irq(pdev, 0);
 
-	//UBNT - Add RTL8367 interrupt, but no need in EdgeOS
-#if 0
-	if(strcmp(ubnt_bd_g.type, "e55") == 0)
-		gsw->rtl8367_irq = platform_get_irq(pdev, 1);
-#endif
-	//UBNT_Andrew
-
 	platform_set_drvdata(pdev, gsw);
 
 	gsw_mt7621 = gsw;
+
+#ifdef CONFIG_DTB_UBNT_ER
+	setup_timer(&update_flow_control_status_timer, update_flow_control_status_handler, NULL);
+#endif
 
 	return 0;
 }
 
 static int mt7621_gsw_remove(struct platform_device *pdev)
 {
+#ifdef CONFIG_DTB_UBNT_ER
+	if(timer_pending(&update_flow_control_status_timer)) {
+		del_timer_sync(&update_flow_control_status_timer);
+	}
+#endif
+
 	platform_set_drvdata(pdev, NULL);
 
 	return 0;

@@ -78,6 +78,11 @@
 #include <linux/capability.h>
 #include <linux/user_namespace.h>
 
+#if defined (CONFIG_RA_HW_NAT)  || defined (CONFIG_RA_HW_NAT_MODULE)
+#include "../net/nat/hw_nat/ra_nat.h"
+#include "../net/nat/hw_nat/frame_engine.h"
+#endif
+
 struct kmem_cache *skbuff_head_cache __read_mostly;
 static struct kmem_cache *skbuff_fclone_cache __read_mostly;
 int sysctl_max_skb_frags __read_mostly = MAX_SKB_FRAGS;
@@ -760,6 +765,11 @@ static void skb_release_all(struct sk_buff *skb)
 
 void __kfree_skb(struct sk_buff *skb)
 {
+#if defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+	if(IS_MAGIC_TAG_VALID(skb) || (FOE_MAGIC_TAG(skb) == FOE_MAGIC_PPE))
+		memset(FOE_INFO_START_ADDR(skb), 0, FOE_INFO_LEN);
+#endif
+
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }
@@ -1598,6 +1608,14 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	       skb_shinfo(skb),
 	       offsetof(struct skb_shared_info, frags[skb_shinfo(skb)->nr_frags]));
 
+#if defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#if defined (HNAT_USE_HEADROOM)
+	memcpy(data, skb->head, FOE_INFO_LEN); //copy headroom
+#elif defined (HNAT_USE_TAILROOM)
+	memcpy( (data + size - FOE_INFO_LEN), (skb->end - FOE_INFO_LEN), FOE_INFO_LEN); //copy tailroom
+#endif
+#endif
+			
 	/*
 	 * if shinfo is shared we must drop the old head gracefully, but if it
 	 * is not we can just drop the old head and let the existing refcount

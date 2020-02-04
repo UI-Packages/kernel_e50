@@ -36,7 +36,52 @@ static int xfrm4_mode_tunnel_output(struct xfrm_state *x, struct sk_buff *skb)
 	skb_set_inner_network_header(skb, skb_network_offset(skb));
 	skb_set_inner_transport_header(skb, skb_transport_offset(skb));
 
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+	if (_ipsec_accel_on_) {
+		int offset = 0;
+		if (x->props.mode == XFRM_MODE_TUNNEL)
+		{	
+			if (x->encap)
+				offset = 20+8;
+			else
+				offset = 20;
+		}
+		else
+		{
+			if (x->encap)
+				offset = 8;
+			else
+				offset = 0;
+		}		
+		skb_set_network_header(skb, -offset);
+	} else {
+		skb_set_network_header(skb, -x->props.header_len);
+	}
+#else /* defined(CONFIG_RALINK_HWCRYPTO_2) */	
+#if defined (CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)
+	{
+		int offset = 0;
+		if (x->props.mode == XFRM_MODE_TUNNEL)
+		{	
+			if (x->encap)
+				offset = 20+8;
+			else
+				offset = 20;
+		}
+		else
+		{
+			if (x->encap)
+				offset = 8;
+			else
+				offset = 0;
+		}		
+		skb_set_network_header(skb, -offset);
+	}
+#else
 	skb_set_network_header(skb, -x->props.header_len);
+#endif
+#endif /* defined(CONFIG_RALINK_HWCRYPTO_2) */
+
 	skb->mac_header = skb->network_header +
 			  offsetof(struct iphdr, protocol);
 	skb->transport_header = skb->network_header + sizeof(*top_iph);
@@ -66,6 +111,7 @@ static int xfrm4_mode_tunnel_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	top_iph->saddr = x->props.saddr.a4;
 	top_iph->daddr = x->id.daddr.a4;
+
 	ip_select_ident(dev_net(dst->dev), skb, NULL);
 
 	return 0;

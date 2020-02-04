@@ -86,3 +86,10 @@ obj-y				+= l3mdev/
 endif
 obj-$(CONFIG_QRTR)		+= qrtr/
 obj-$(CONFIG_NET_NCSI)		+= ncsi/
+
+ifneq ($(CONFIG_RA_NAT_NONE),y)
+obj-y                           += nat/foe_hook/
+endif
+
+obj-$(CONFIG_RA_HW_NAT)         += nat/hw_nat/
+

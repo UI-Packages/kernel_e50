@@ -126,13 +126,17 @@ enum fe_work_flag {
 #define FE_MDIO_CFG2		(FE_FE_OFFSET + 0x18)
 #define FE_FOC_TS_T		(FE_FE_OFFSET + 0x1C)
 
+#if !defined (CONFIG_RA_NAT_HW)
 #define	FE_GDMA1_FWD_CFG	(FE_GDMA_OFFSET + 0x00)
+#endif
 #define FE_GDMA1_SCH_CFG	(FE_GDMA_OFFSET + 0x04)
 #define FE_GDMA1_SHPR_CFG	(FE_GDMA_OFFSET + 0x08)
 #define FE_GDMA1_MAC_ADRL	(FE_GDMA_OFFSET + 0x0C)
 #define FE_GDMA1_MAC_ADRH	(FE_GDMA_OFFSET + 0x10)
 
+#if !defined (CONFIG_RA_NAT_HW)
 #define	FE_GDMA2_FWD_CFG	(FE_GDMA2_OFFSET + 0x00)
+#endif
 #define FE_GDMA2_SCH_CFG	(FE_GDMA2_OFFSET + 0x04)
 #define FE_GDMA2_SHPR_CFG	(FE_GDMA2_OFFSET + 0x08)
 #define FE_GDMA2_MAC_ADRL	(FE_GDMA2_OFFSET + 0x0C)
@@ -406,6 +410,7 @@ struct fe_soc_data {
 #define FE_FLAG_JUMBO_FRAME		BIT(2)
 #define FE_FLAG_RX_2B_OFFSET		BIT(3)
 #define FE_FLAG_RX_SG_DMA		BIT(4)
+#define FE_FLAG_RX_VLAN_CTAG		BIT(5)
 #define FE_FLAG_NAPI_WEIGHT		BIT(6)
 #define FE_FLAG_CALIBRATE_CLK		BIT(7)
 #define FE_FLAG_HAS_SWITCH		BIT(8)

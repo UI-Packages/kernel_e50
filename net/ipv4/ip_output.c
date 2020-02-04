@@ -81,6 +81,11 @@
 #include <linux/netlink.h>
 #include <linux/tcp.h>
 
+#if defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#include "../../net/nat/hw_nat/ra_nat.h"
+#include "../../net/nat/hw_nat/frame_engine.h"
+#endif
+
 #if 0
 static int
 ip_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
@@ -514,6 +519,19 @@ packet_routed:
 	/* TODO : should we use skb->sk here instead of sk ? */
 	skb->priority = sk->sk_priority;
 	skb->mark = sk->sk_mark;
+
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+    /* only clear headeroom for TCP OR not L2TP packets */
+    if( (iph->protocol == 0x6) || (ntohs(udp_hdr(skb)->dest) != 1701) ) {
+        FOE_MAGIC_TAG(skb) = 0;
+        FOE_AI(skb) = UN_HIT;
+    }
+#else
+    FOE_MAGIC_TAG(skb) = 0;
+    FOE_AI(skb) = UN_HIT;
+#endif
+#endif
 
 	res = ip_local_out(net, sk, skb);
 	rcu_read_unlock();

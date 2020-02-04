@@ -460,7 +460,6 @@ struct Qdisc_ops noqueue_qdisc_ops __read_mostly = {
 	.peek		=	noop_dequeue,
 	.owner		=	THIS_MODULE,
 };
-EXPORT_SYMBOL(noqueue_qdisc_ops);
 
 static const u8 prio2band[TC_PRIO_MAX + 1] = {
 	1, 2, 2, 2, 1, 2, 0, 0 , 1, 1, 1, 1, 1, 1, 1, 1

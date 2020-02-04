@@ -58,6 +58,10 @@
 
 #include "nf_internals.h"
 
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#include "../nat/hw_nat/ra_nat.h"
+#endif
+
 #define NF_CONNTRACK_VERSION	"0.5.0"
 
 int (*nfnetlink_parse_nat_setup_hook)(struct nf_conn *ct,
@@ -1358,6 +1362,9 @@ nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum,
 	const struct nf_conntrack_l3proto *l3proto;
 	const struct nf_conntrack_l4proto *l4proto;
 	struct nf_conn *ct, *tmpl;
+#if defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+	struct nf_conn_help *help;
+#endif
 	enum ip_conntrack_info ctinfo;
 	unsigned int *timeouts;
 	unsigned int dataoff;
@@ -1444,6 +1451,18 @@ repeat:
 		ret = -ret;
 		goto out;
 	}
+
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+	help = nfct_help(ct);
+	if (help && help->helper) {
+		if( IS_SPACE_AVAILABLED(skb) &&
+			((FOE_MAGIC_TAG(skb) == FOE_MAGIC_PCI) ||
+			(FOE_MAGIC_TAG(skb) == FOE_MAGIC_WLAN) ||
+			(FOE_MAGIC_TAG(skb) == FOE_MAGIC_GE))){
+			FOE_ALG(skb)=1;
+		}
+	}
+#endif
 
 	if (ctinfo == IP_CT_ESTABLISHED_REPLY &&
 	    !test_and_set_bit(IPS_SEEN_REPLY_BIT, &ct->status))

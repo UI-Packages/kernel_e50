@@ -33,9 +33,39 @@ config NET_MEDIATEK_MT7621
 
 endchoice
 
+config  HW_IPSEC
+	depends on RALINK_MT7621
+	bool    "HW IPSec Enable"
+	default n
+
+config  RALINK_HWCRYPTO
+	depends on HW_IPSEC
+	tristate "HW Crypto Engine"
+	select RALINK_HWCRYPTO_2
+	default m
+
+config  RALINK_HWCRYPTO_2
+	depends on HW_IPSEC
+	bool "HW Crypto Engine 2"
+
+#######
+# NAT
+#######
+choice
+prompt "Ralink NAT Type"
+	
+config  RA_NAT_NONE
+bool "None"
+config  RA_NAT_HW
+bool "Hardware"
+depends on !RALINK_RT5350
+endchoice
+
+source "net/nat/hw_nat/Kconfig"
+
 config NET_MEDIATEK_OFFLOAD
 	def_bool NET_MEDIATEK_SOC
-	depends on NET_MEDIATEK_MT7621
+	depends on !RA_NAT_HW && NET_MEDIATEK_MT7621
 
 config NET_MEDIATEK_HW_QOS
 	def_bool NET_MEDIATEK_SOC
@@ -67,4 +97,5 @@ config NET_MEDIATEK_GSW_MT7620
 config NET_MEDIATEK_GSW_MT7621
 	def_tristate NET_MEDIATEK_SOC
 	depends on NET_MEDIATEK_MT7621
+
 endif
