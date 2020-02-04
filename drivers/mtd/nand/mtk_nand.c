@@ -2117,7 +2117,8 @@ bool mtk_nand_exec_read_page(struct mtd_info *mtd, u32 u4RowAddr, u32 u4PageSize
 			if(g_bHwEcc){     
 				if (!mtk_nand_check_bch_error(mtd, buf+j*512, j, u4RowAddr))
 				{
-					bRet = false;
+				  // UBNT: bret=true when bch error, EBADMSG is returned by nand_base.c when uncorrected ECC errors.
+				  // bRet = false;
 				}
 	        }
 			
