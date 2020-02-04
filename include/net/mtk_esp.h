@@ -212,6 +212,9 @@ typedef struct mcrypto_proc_t {
 }mcrypto_proc_type;
 
 extern mcrypto_proc_type mcrypto_proc;
+#if defined (CONFIG_RALINK_HWCRYPTO_2)
+extern bool _ipsec_accel_on_;
+#endif
 
 #define HWCRYPTO_OK			1
 #define HWCRYPTO_NOMEM		0x80

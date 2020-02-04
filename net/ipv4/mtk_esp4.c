@@ -65,6 +65,7 @@
 static ipsecEip93Adapter_t 	*ipsecEip93AdapterListOut[IPESC_EIP93_ADAPTERS];
 static ipsecEip93Adapter_t 	*ipsecEip93AdapterListIn[IPESC_EIP93_ADAPTERS];
 static spinlock_t 			cryptoLock;
+static spinlock_t				ipsec_adapters_lock;
 static eip93DescpHandler_t 	resDescpHandler;
 
 mcrypto_proc_type 			mcrypto_proc;
@@ -178,6 +179,13 @@ EXPORT_SYMBOL(ipsec_cmdHandler_free);
 EXPORT_SYMBOL(ipsec_hashDigests_get);
 EXPORT_SYMBOL(ipsec_hashDigests_set);
 EXPORT_SYMBOL(ipsec_espSeqNum_get);
+
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+// global option for enable/disable IPSEC acceleration. disabled by default.
+// this value will be update when crypto_k is inserted.
+bool _ipsec_accel_on_ = false;
+EXPORT_SYMBOL(_ipsec_accel_on_);
+#endif
 
 #ifdef MCRYPTO_DBG
 #define ra_dbg 	printk
@@ -397,13 +405,14 @@ ipsec_hashDigest_preCompute(
 	{
 		goto free_pODigest;
 	}
-#if !defined (FEATURE_AVOID_QUEUE_PACKET)
+
 	spin_lock(&cryptoLock);
-#endif	
+	while (ipsec_eip93CmdResCnt_check())
+	{	
 	ipsec_packet_put(addrsPreCompute->cmdHandler, NULL); //mtk_packet_put()
-#if !defined (FEATURE_AVOID_QUEUE_PACKET)
+		break;
+	}
 	spin_unlock(&cryptoLock);
-#endif	
 	
 	/* start pre-compute for Hash Outer Digests */	
 	errVal = ipsec_preComputeOut_cmdDescp_set(currAdapterPtr, digestPreComputeDir);
@@ -412,13 +421,14 @@ ipsec_hashDigest_preCompute(
 		goto free_pODigest;
 	}
 	
-#if !defined (FEATURE_AVOID_QUEUE_PACKET)
 	spin_lock(&cryptoLock);
-#endif	
+	while (ipsec_eip93CmdResCnt_check())
+	{		
 	ipsec_packet_put(addrsPreCompute->cmdHandler, NULL); //mtk_packet_put()
-#if !defined (FEATURE_AVOID_QUEUE_PACKET)
+		break;
+	}
 	spin_unlock(&cryptoLock);
-#endif	
+
 	return 1; //success
 	
 
@@ -651,6 +661,7 @@ ipsec_esp_preProcess(
 		ipsecEip93AdapterList = &ipsecEip93AdapterListIn[0];
 	}
 
+	spin_lock(&ipsec_adapters_lock);
 	//try to find the matched ipsecEip93Adapter for the ipsec flow
 	for (i = 0; i < IPESC_EIP93_ADAPTERS; i++)
 	{
@@ -676,6 +687,7 @@ ipsec_esp_preProcess(
 	{
 		printk("\n\n !The ipsecEip93AdapterList table is full! \n\n");
 		err = -EPERM;
+		spin_unlock(&ipsec_adapters_lock);
 		goto EXIT;
 	}
 
@@ -722,11 +734,19 @@ ipsec_esp_preProcess(
 			spin_unlock_irqrestore(&currAdapterPtr->lock, flags);
 			goto EXIT;
 		}		
-		spin_unlock_irqrestore(&currAdapterPtr->lock, flags);
 		currAdapterPtr->spi = spi;
 		ipsecEip93AdapterList[currAdapterIdx] = currAdapterPtr;
+		
+		if (direction == HASH_DIGEST_IN)
+				currAdapterPtr->isEncryptOrDecrypt = CRYPTO_DECRYPTION;
+
+		else
+				currAdapterPtr->isEncryptOrDecrypt = CRYPTO_ENCRYPTION;	
+		spin_unlock_irqrestore(&currAdapterPtr->lock, flags);
+		
+		
 	}
-	
+	spin_unlock(&ipsec_adapters_lock);
 	
 	currAdapterPtr = ipsecEip93AdapterList[currAdapterIdx];
 
@@ -1573,7 +1593,7 @@ ipsec_eip93Adapter_free(
 	unsigned int i;
 	ipsecEip93Adapter_t *currAdapterPtr;
 
-	
+	spin_lock(&ipsec_adapters_lock);
 	for (i = 0; i < IPESC_EIP93_ADAPTERS; i++)
 	{
 		if ((currAdapterPtr = ipsecEip93AdapterListOut[i]) != NULL)
@@ -1583,6 +1603,7 @@ ipsec_eip93Adapter_free(
 				ipsec_cmdHandler_free(currAdapterPtr->cmdHandler);
 				kfree(currAdapterPtr);
 				ipsecEip93AdapterListOut[i] = NULL;
+				spin_unlock(&ipsec_adapters_lock);
 				return;
 			}
 		}
@@ -1597,10 +1618,12 @@ ipsec_eip93Adapter_free(
 				ipsec_cmdHandler_free(currAdapterPtr->cmdHandler);
 				kfree(currAdapterPtr);
 				ipsecEip93AdapterListIn[i] = NULL;
+				spin_unlock(&ipsec_adapters_lock);
 				return;
 			}
 		}
 	}
+	spin_unlock(&ipsec_adapters_lock);
 }
 
 /*_______________________________________________________________________
@@ -1901,6 +1924,7 @@ ipsec_cryptoLock_init(
 )
 {
 	spin_lock_init(&cryptoLock);
+	spin_lock_init(&ipsec_adapters_lock);
 }
 
 EXPORT_SYMBOL(ipsec_eip93_adapters_init);
@@ -1989,8 +2013,15 @@ ipsec_BH_handler_resultGet(
 			//the result is for inner and outer hash digest pre-compute
 			else
 			{
-				printk("=== Build IPSec Connection ===\n");
 				currAdapterPtr = (ipsecEip93Adapter_t *) ipsec_eip93UserId_get(&resDescpHandler);
+				if (currAdapterPtr)
+				printk("=== Build IPSec %s Connection===\n",\
+							(currAdapterPtr->isEncryptOrDecrypt==CRYPTO_ENCRYPTION) ? "outbound" : " inbound");
+				else
+				{	
+					printk("No connection entry in table\n");
+					return;				
+				}
 				spin_lock(&currAdapterPtr->lock);
 				//for the inner digests			
 				if (currAdapterPtr->isHashPreCompute == 0)

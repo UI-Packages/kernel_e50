@@ -39,6 +39,11 @@ config  RALINK_HWCRYPTO
 	tristate "HW Crypto Engine"
 	default m
 
+config  RALINK_HWCRYPTO_2
+	depends on RALINK_HWCRYPTO
+	bool "HW Crypto Engine (customized)"
+	default n
+
 #############
 # Wireless
 #############

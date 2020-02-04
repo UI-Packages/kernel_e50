@@ -192,6 +192,21 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 
 		skb_dst_force(skb);
 
+#if defined (CONFIG_RALINK_HWCRYPTO_2)
+		if (_ipsec_accel_on_) {
+			if (family == AF_INET)
+			{
+				if (x->type->input(x, skb) == 1)
+				{
+					return 0;
+				}
+				else
+					goto drop;
+			}
+		} else {	
+			nexthdr = x->type->input(x, skb);
+		}
+#else /* defined(CONFIG_RALINK_HWCRYPTO_2) */
 #if defined (CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)
 		if (family == AF_INET)
 		{
@@ -205,6 +220,7 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 		else	
 #endif
 		nexthdr = x->type->input(x, skb);
+#endif /* defined(CONFIG_RALINK_HWCRYPTO_2) */
 
 		if (nexthdr == -EINPROGRESS)
 			return 0;

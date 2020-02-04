@@ -53,6 +53,10 @@
 #define XFRM_INC_STATS_USER(net, field)	((void)(net))
 #endif
 
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+extern bool _ipsec_accel_on_;
+#endif
+
 extern struct mutex xfrm_cfg_mutex;
 
 /* Organization of SPD aka "XFRM rules"

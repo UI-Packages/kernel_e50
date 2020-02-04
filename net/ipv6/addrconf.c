@@ -2783,6 +2783,9 @@ static void addrconf_gre_config(struct net_device *dev)
 
 	if (!ipv6_generate_eui64(addr.s6_addr + 8, dev))
 		addrconf_add_linklocal(idev, &addr);
+
+	if (dev->flags & IFF_POINTOPOINT)
+                addrconf_add_mroute(dev);
 }
 #endif
 

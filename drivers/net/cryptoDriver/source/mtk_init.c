@@ -16,6 +16,10 @@
 
 static struct proc_dir_entry *entry;
 
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+extern bool _ipsec_accel_on_;
+#endif
+
 extern void 
 mtk_ipsec_init(
 	void
@@ -106,7 +110,6 @@ VDriver_Init(
 	void
 )
 {
-    
     if (!Adapter_Init())
     {
 		printk("\n !Adapter_Init failed! \n");
@@ -131,7 +134,12 @@ VDriver_Init(
 	memset(&mcrypto_proc, 0, sizeof(mcrypto_proc_type));
     
 	mtk_ipsec_init();
-    
+
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+	_ipsec_accel_on_ = true;
+	printk("HW Crypto : Enable\n");
+#endif
+
     return 0;   // success
 }
 
@@ -142,6 +150,10 @@ VDriver_Exit(
 	void
 )
 {
+#if defined(CONFIG_RALINK_HWCRYPTO_2)
+	_ipsec_accel_on_ = false;
+	printk("HW Crypto : Disable\n");
+#endif
     Adapter_UnInit();
 	
 	PEC_UnInit();
