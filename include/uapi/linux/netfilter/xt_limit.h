@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _XT_RATE_H
 #define _XT_RATE_H
 
@@ -15,10 +16,10 @@ struct xt_rateinfo {
 	__u32 burst;  /* Period multiplier for upper limit. */
 
 	/* Used internally by the kernel */
-	__u64 prev; /* moved to xt_limit_priv */
+	unsigned long prev; /* moved to xt_limit_priv */
 	__u32 credit; /* moved to xt_limit_priv */
 	__u32 credit_cap, cost;
 
-	struct xt_limit_priv *master __attribute__((aligned(8)));
+	struct xt_limit_priv *master;
 };
 #endif /*_XT_RATE_H*/

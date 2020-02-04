@@ -12,8 +12,9 @@
 #include <asm/mipsregs.h>
 #include <asm/stackframe.h>
 #include <asm/addrspace.h>
+#include "machine_kexec.h"
 
-LEAF(relocate_new_kernel)
+LEAF(kexec_relocate_new_kernel)
 	PTR_L a0,	arg0
 	PTR_L a1,	arg1
 	PTR_L a2,	arg2
@@ -24,7 +25,7 @@ LEAF(relocate_new_kernel)
 
 process_entry:
 	PTR_L		s2, (s0)
-	PTR_ADD		s0, s0, SZREG
+	PTR_ADDIU	s0, s0, SZREG
 
 	/*
 	 * In case of a kdump/crash kernel, the indirection page is not
@@ -61,9 +62,9 @@ copy_word:
 	/* copy page word by word */
 	REG_L		s5, (s2)
 	REG_S		s5, (s4)
-	PTR_ADD		s4, s4, SZREG
-	PTR_ADD		s2, s2, SZREG
-	LONG_SUB	s6, s6, 1
+	PTR_ADDIU	s4, s4, SZREG
+	PTR_ADDIU	s2, s2, SZREG
+	LONG_ADDIU	s6, s6, -1
 	beq		s6, zero, process_entry
 	b		copy_word
 	b		process_entry
@@ -98,7 +99,7 @@ done:
 #endif
 	/* jump to kexec_start_address */
 	j		s1
-	END(relocate_new_kernel)
+	END(kexec_relocate_new_kernel)
 
 #ifdef CONFIG_SMP
 /*
@@ -184,9 +185,15 @@ kexec_indirection_page:
 	PTR		0
 	.size		kexec_indirection_page, PTRSIZE
 
-relocate_new_kernel_end:
+kexec_argv_buf:
+	EXPORT(kexec_argv_buf)
+	.skip		KEXEC_COMMAND_LINE_SIZE
+	.size		kexec_argv_buf, KEXEC_COMMAND_LINE_SIZE
 
-relocate_new_kernel_size:
-	EXPORT(relocate_new_kernel_size)
-	PTR		relocate_new_kernel_end - relocate_new_kernel
-	.size		relocate_new_kernel_size, PTRSIZE
+kexec_argv:
+	EXPORT(kexec_argv)
+	.skip		KEXEC_ARGV_SIZE
+	.size		kexec_argv, KEXEC_ARGV_SIZE
+
+kexec_relocate_new_kernel_end:
+	EXPORT(kexec_relocate_new_kernel_end)

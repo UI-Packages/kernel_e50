@@ -20,24 +20,15 @@
 //#define __INTERNAL_USE_AHB_MODE__ 	(0)
 #define SKIP_BAD_BLOCK
 #define FACT_BBT
-//#define NAND_JFFS2_WORKAROUND
-
-#if 0
-#define UBIFS_ECC_0_PATCH
-#endif
-
-#ifdef FACT_BBT
-#define FACT_BBT_POOL_SIZE      (4)
-#endif
 
 #ifndef NAND_OTP_SUPPORT
 #define NAND_OTP_SUPPORT 0
 #endif
 
 /*******************************************************************************
- * Macro definition 
+ * Macro definition
  *******************************************************************************/
-//#define NFI_SET_REG32(reg, value)   (DRV_WriteReg32(reg, DRV_Reg32(reg) | (value))) 
+//#define NFI_SET_REG32(reg, value)   (DRV_WriteReg32(reg, DRV_Reg32(reg) | (value)))
 //#define NFI_SET_REG16(reg, value)   (DRV_WriteReg16(reg, DRV_Reg16(reg) | (value)))
 //#define NFI_CLN_REG32(reg, value)   (DRV_WriteReg32(reg, DRV_Reg32(reg) & (~(value))))
 //#define NFI_CLN_REG16(reg, value)   (DRV_WriteReg16(reg, DRV_Reg16(reg) & (~(value))))
@@ -77,7 +68,7 @@ do {	\
 #define OOB_AVAI_PER_SECTOR (8)
 
 #ifndef PART_SIZE_BMTPOOL
-#define BMT_POOL_SIZE       (8)
+#define BMT_POOL_SIZE       (80)
 #else
 #define BMT_POOL_SIZE (PART_SIZE_BMTPOOL)
 #endif
@@ -91,7 +82,7 @@ do {	\
 
 
 /* temporarity definiation */
-#if !defined (__KERNEL_NAND__) 
+#if !defined (__KERNEL_NAND__)
 #define KERN_INFO
 #define KERN_WARNING
 #define KERN_ERR
@@ -102,7 +93,7 @@ do {	\
 #define NFI_BASE 					RALINK_NAND_CTRL_BASE
 #define NFIECC_BASE 				RALINK_NANDECC_CTRL_BASE
 
-#if (__INTERNAL_USE_AHB_MODE__)
+#ifdef __INTERNAL_USE_AHB_MODE__
 #define MT65xx_POLARITY_LOW   0
 #define MT65XX_PDN_PERI_NFI   0
 #define MT65xx_EDGE_SENSITIVE 0
@@ -110,8 +101,8 @@ do {	\
 #endif
 
 #if defined (__KERNEL_NAND__)
-#define RALINK_REG(x)		(*((volatile u32 *)(x)))	
-#define __virt_to_phys(x)	virt_to_phys(x)
+#define RALINK_REG(x)		(*((volatile u32 *)(x)))
+#define __virt_to_phys(x)	virt_to_phys((volatile void*)x)
 #else
 #define CONFIG_MTD_NAND_VERIFY_WRITE	(1)
 #define printk	printf

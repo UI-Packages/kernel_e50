@@ -10,3 +10,4 @@
 #define IMQ_MAX_DEVS	(IMQ_F_IFMASK + 1)
 
 #endif /* _IMQ_H */
+

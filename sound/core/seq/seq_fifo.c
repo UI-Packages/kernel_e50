@@ -21,6 +21,8 @@
 
 #include <sound/core.h>
 #include <linux/slab.h>
+#include <linux/sched/signal.h>
+
 #include "seq_fifo.h"
 #include "seq_lock.h"
 
@@ -33,10 +35,8 @@ struct snd_seq_fifo *snd_seq_fifo_new(int poolsize)
 	struct snd_seq_fifo *f;
 
 	f = kzalloc(sizeof(*f), GFP_KERNEL);
-	if (f == NULL) {
-		snd_printd("malloc failed for snd_seq_fifo_new() \n");
+	if (!f)
 		return NULL;
-	}
 
 	f->pool = snd_seq_pool_new(poolsize);
 	if (f->pool == NULL) {
@@ -125,9 +125,9 @@ int snd_seq_fifo_event_in(struct snd_seq_fifo *f,
 		return -EINVAL;
 
 	snd_use_lock_use(&f->use_lock);
-	err = snd_seq_event_dup(f->pool, event, &cell, 1, NULL); /* always non-blocking */
+	err = snd_seq_event_dup(f->pool, event, &cell, 1, NULL, NULL); /* always non-blocking */
 	if (err < 0) {
-		if (err == -ENOMEM)
+		if ((err == -ENOMEM) || (err == -EAGAIN))
 			atomic_inc(&f->overflow);
 		snd_use_lock_free(&f->use_lock);
 		return err;
@@ -179,7 +179,7 @@ int snd_seq_fifo_cell_out(struct snd_seq_fifo *f,
 {
 	struct snd_seq_event_cell *cell;
 	unsigned long flags;
-	wait_queue_t wait;
+	wait_queue_entry_t wait;
 
 	if (snd_BUG_ON(!f))
 		return -EINVAL;

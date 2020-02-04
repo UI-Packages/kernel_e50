@@ -33,8 +33,8 @@
 #include <linux/interrupt.h>
 #include <linux/mutex.h>
 #include <linux/firmware.h>
+#include <linux/io.h>
 
-#include <asm/io.h>
 #include <uapi/sound/emu10k1.h>
 
 /* ------------------- DEFINES -------------------- */
@@ -436,8 +436,6 @@
 #define CCCA_CURRADDR_MASK	0x00ffffff	/* Current address of the selected channel		*/
 #define CCCA_CURRADDR		0x18000008
 
-/* undefine CCR to avoid conflict with the definition for SH */
-#undef CCR
 #define CCR			0x09		/* Cache control register				*/
 #define CCR_CACHEINVALIDSIZE	0x07190009
 #define CCR_CACHEINVALIDSIZE_MASK	0xfe000000	/* Number of invalid samples cache for this channel    	*/
@@ -1690,7 +1688,8 @@ struct snd_emu1010 {
 	unsigned int internal_clock; /* 44100 or 48000 */
 	unsigned int optical_in; /* 0:SPDIF, 1:ADAT */
 	unsigned int optical_out; /* 0:SPDIF, 1:ADAT */
-	struct task_struct *firmware_thread;
+	struct delayed_work firmware_work;
+	u32 last_reg;
 };
 
 struct snd_emu10k1 {
@@ -1815,17 +1814,17 @@ int snd_emu10k1_create(struct snd_card *card,
 		       uint subsystem,
 		       struct snd_emu10k1 ** remu);
 
-int snd_emu10k1_pcm(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_emu10k1_pcm_mic(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_emu10k1_pcm_efx(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_p16v_pcm(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
+int snd_emu10k1_pcm(struct snd_emu10k1 *emu, int device);
+int snd_emu10k1_pcm_mic(struct snd_emu10k1 *emu, int device);
+int snd_emu10k1_pcm_efx(struct snd_emu10k1 *emu, int device);
+int snd_p16v_pcm(struct snd_emu10k1 *emu, int device);
 int snd_p16v_free(struct snd_emu10k1 * emu);
 int snd_p16v_mixer(struct snd_emu10k1 * emu);
-int snd_emu10k1_pcm_multi(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_emu10k1_fx8010_pcm(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
+int snd_emu10k1_pcm_multi(struct snd_emu10k1 *emu, int device);
+int snd_emu10k1_fx8010_pcm(struct snd_emu10k1 *emu, int device);
 int snd_emu10k1_mixer(struct snd_emu10k1 * emu, int pcm_device, int multi_device);
 int snd_emu10k1_timer(struct snd_emu10k1 * emu, int device);
-int snd_emu10k1_fx8010_new(struct snd_emu10k1 *emu, int device, struct snd_hwdep ** rhwdep);
+int snd_emu10k1_fx8010_new(struct snd_emu10k1 *emu, int device);
 
 irqreturn_t snd_emu10k1_interrupt(int irq, void *dev_id);
 

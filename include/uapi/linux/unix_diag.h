@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef __UNIX_DIAG_H__
 #define __UNIX_DIAG_H__
 
@@ -31,6 +32,7 @@ struct unix_diag_msg {
 };
 
 enum {
+	/* UNIX_DIAG_NONE, standard nl API requires this attribute!  */
 	UNIX_DIAG_NAME,
 	UNIX_DIAG_VFS,
 	UNIX_DIAG_PEER,

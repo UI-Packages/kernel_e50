@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_LINUX_FD_H
 #define _UAPI_LINUX_FD_H
 
@@ -185,7 +186,8 @@ enum {
 				 * to clear media change status */
 	FD_UNUSED_BIT,
 	FD_DISK_CHANGED_BIT,	/* disk has been changed since last i/o */
-	FD_DISK_WRITABLE_BIT	/* disk is writable */
+	FD_DISK_WRITABLE_BIT,	/* disk is writable */
+	FD_OPEN_SHOULD_FAIL_BIT
 };
 
 #define FDSETDRVPRM _IOW(2, 0x90, struct floppy_drive_params)

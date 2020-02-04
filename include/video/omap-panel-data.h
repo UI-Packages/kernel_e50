@@ -27,124 +27,56 @@
 #ifndef __OMAP_PANEL_DATA_H
 #define __OMAP_PANEL_DATA_H
 
-struct omap_dss_device;
+#include <video/display_timing.h>
 
 /**
- * struct panel_generic_dpi_data - panel driver configuration data
- * @name: panel name
- * @platform_enable: platform specific panel enable function
- * @platform_disable: platform specific panel disable function
- * @num_gpios: number of gpios connected to panel
- * @gpios: gpio numbers on the platform
- * @gpio_invert: configure gpio as active high or low
+ * connector_atv platform data
+ * @name: name for this display entity
+ * @source: name of the display entity used as a video source
+ * @invert_polarity: invert signal polarity
  */
-struct panel_generic_dpi_data {
+struct connector_atv_platform_data {
 	const char *name;
-	int (*platform_enable)(struct omap_dss_device *dssdev);
-	void (*platform_disable)(struct omap_dss_device *dssdev);
+	const char *source;
 
-	int num_gpios;
-	int gpios[10];
-	bool gpio_invert[10];
+	bool invert_polarity;
 };
 
 /**
- * struct panel_n8x0_data - N800 panel driver configuration data
+ * panel_dpi platform data
+ * @name: name for this display entity
+ * @source: name of the display entity used as a video source
+ * @data_lines: number of DPI datalines
+ * @display_timing: timings for this panel
+ * @backlight_gpio: gpio to enable/disable the backlight (or -1)
+ * @enable_gpio: gpio to enable/disable the panel (or -1)
  */
-struct panel_n8x0_data {
-	int (*platform_enable)(struct omap_dss_device *dssdev);
-	void (*platform_disable)(struct omap_dss_device *dssdev);
-	int panel_reset;
-	int ctrl_pwrdown;
+struct panel_dpi_platform_data {
+	const char *name;
+	const char *source;
+
+	int data_lines;
+
+	const struct display_timing *display_timing;
+
+	int backlight_gpio;
+	int enable_gpio;
 };
 
 /**
- * struct nokia_dsi_panel_data - Nokia DSI panel driver configuration data
- * @name: panel name
- * @use_ext_te: use external TE
- * @ext_te_gpio: external TE GPIO
- * @esd_interval: interval of ESD checks, 0 = disabled (ms)
- * @ulps_timeout: time to wait before entering ULPS, 0 = disabled (ms)
- * @use_dsi_backlight: true if panel uses DSI command to control backlight
- * @pin_config: DSI pin configuration
+ * panel_acx565akm platform data
+ * @name: name for this display entity
+ * @source: name of the display entity used as a video source
+ * @reset_gpio: gpio to reset the panel (or -1)
+ * @datapairs: number of SDI datapairs
  */
-
-struct nokia_dsi_panel_data {
+struct panel_acx565akm_platform_data {
 	const char *name;
+	const char *source;
 
 	int reset_gpio;
 
-	bool use_ext_te;
-	int ext_te_gpio;
-
-	unsigned esd_interval;
-	unsigned ulps_timeout;
-
-	bool use_dsi_backlight;
-
-	struct omap_dsi_pin_config pin_config;
-};
-
-/**
- * struct picodlp_panel_data - picodlp panel driver configuration data
- * @picodlp_adapter_id:	i2c_adapter number for picodlp
- */
-struct picodlp_panel_data {
-	int picodlp_adapter_id;
-	int emu_done_gpio;
-	int pwrgood_gpio;
-};
-
-/**
- * struct tfp410_platform_data - tfp410 panel driver configuration data
- * @i2c_bus_num: i2c bus id for the panel
- * @power_down_gpio: gpio number for PD pin (or -1 if not available)
- */
-struct tfp410_platform_data {
-	int i2c_bus_num;
-	int power_down_gpio;
-};
-
-/**
- * sharp ls panel driver configuration data
- * @resb_gpio: reset signal
- * @ini_gpio: power on control
- * @mo_gpio: selection for resolution(VGA/QVGA)
- * @lr_gpio: selection for horizontal scanning direction
- * @ud_gpio: selection for vertical scanning direction
- */
-struct panel_sharp_ls037v7dw01_data {
-	int resb_gpio;
-	int ini_gpio;
-	int mo_gpio;
-	int lr_gpio;
-	int ud_gpio;
-};
-
-/**
- * acx565akm panel driver configuration data
- * @reset_gpio: reset signal
- */
-struct panel_acx565akm_data {
-	int reset_gpio;
-};
-
-/**
- * nec nl8048 panel driver configuration data
- * @res_gpio: reset signal
- * @qvga_gpio: selection for resolution(QVGA/WVGA)
- */
-struct panel_nec_nl8048_data {
-	int res_gpio;
-	int qvga_gpio;
-};
-
-/**
- * tpo td043 panel driver configuration data
- * @nreset_gpio: reset signal
- */
-struct panel_tpo_td043_data {
-	int nreset_gpio;
+	int datapairs;
 };
 
 #endif /* __OMAP_PANEL_DATA_H */

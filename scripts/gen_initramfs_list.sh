@@ -59,6 +59,18 @@ default_initramfs() {
 	EOF
 }
 
+list_openwrt_initramfs() {
+	:
+}
+
+openwrt_initramfs() {
+	# make sure that /dev/console exists
+	cat <<-EOF >> ${output}
+		dir /dev 0755 0 0
+		nod /dev/console 0600 0 0 c 5 1
+	EOF
+}
+
 filetype() {
 	local argv1="$1"
 
@@ -97,7 +109,10 @@ print_mtime() {
 }
 
 list_parse() {
-	[ ! -L "$1" ] && echo "$1 \\" || :
+	if [ -L "$1" ]; then
+		return
+	fi
+	echo "$1" | sed 's/:/\\:/g; s/$/ \\/'
 }
 
 # for each file print a line in following format
@@ -171,11 +186,13 @@ dir_filelist() {
 	${dep_list}header "$1"
 
 	srcdir=$(echo "$1" | sed -e 's://*:/:g')
-	dirlist=$(find "${srcdir}" -printf "%p %m %U %G\n")
+	dirlist=$(find "${srcdir}" -printf "%p %m %U %G\n" | sort)
 
 	# If $dirlist is only one line, then the directory is empty
 	if [  "$(echo "${dirlist}" | wc -l)" -gt 1 ]; then
 		${dep_list}print_mtime "$1"
+
+		${dep_list}openwrt_initramfs
 
 		echo "${dirlist}" | \
 		while read x; do
@@ -226,7 +243,7 @@ cpio_list=
 output="/dev/stdout"
 output_file=""
 is_cpio_compressed=
-compr="gzip -n -9 -f"
+compr="gzip -n -9 -f -"
 
 arg="$1"
 case "$arg" in
@@ -240,12 +257,24 @@ case "$arg" in
 		output_file="$1"
 		cpio_list="$(mktemp ${TMPDIR:-/tmp}/cpiolist.XXXXXX)"
 		output=${cpio_list}
-		echo "$output_file" | grep -q "\.gz$" && compr="gzip -n -9 -f"
-		echo "$output_file" | grep -q "\.bz2$" && compr="bzip2 -9 -f"
-		echo "$output_file" | grep -q "\.lzma$" && compr="lzma -9 -f"
-		echo "$output_file" | grep -q "\.xz$" && \
-				compr="xz --check=crc32 --lzma2=dict=1MiB"
-		echo "$output_file" | grep -q "\.lzo$" && compr="lzop -9 -f"
+		echo "$output_file" | grep -q "\.gz$" \
+                && [ -x "`which gzip 2> /dev/null`" ] \
+                && compr="gzip -n -9 -f -"
+		echo "$output_file" | grep -q "\.bz2$" \
+                && [ -x "`which bzip2 2> /dev/null`" ] \
+                && compr="bzip2 -9 -f -"
+		echo "$output_file" | grep -q "\.lzma$" \
+                && [ -x "`which lzma 2> /dev/null`" ] \
+                && compr="lzma e -d20 -lc1 -lp2 -pb2 -eos -si -so"
+		echo "$output_file" | grep -q "\.xz$" \
+                && [ -x "`which xz 2> /dev/null`" ] \
+                && compr="xz --check=crc32 --lzma2=dict=1MiB"
+		echo "$output_file" | grep -q "\.lzo$" \
+                && [ -x "`which lzop 2> /dev/null`" ] \
+                && compr="lzop -9 -f"
+		echo "$output_file" | grep -q "\.lz4$" \
+                && [ -x "`which lz4 2> /dev/null`" ] \
+                && compr="lz4 -l -9 -f"
 		echo "$output_file" | grep -q "\.cpio$" && compr="cat"
 		shift
 		;;
@@ -256,10 +285,12 @@ while [ $# -gt 0 ]; do
 	case "$arg" in
 		"-u")	# map $1 to uid=0 (root)
 			root_uid="$1"
+			[ "$root_uid" = "-1" ] && root_uid=$(id -u || echo 0)
 			shift
 			;;
 		"-g")	# map $1 to gid=0 (root)
 			root_gid="$1"
+			[ "$root_gid" = "-1" ] && root_gid=$(id -g || echo 0)
 			shift
 			;;
 		"-d")	# display default initramfs list
@@ -303,7 +334,7 @@ if [ ! -z ${output_file} ]; then
 	if [ "${is_cpio_compressed}" = "compressed" ]; then
 		cat ${cpio_tfile} > ${output_file}
 	else
-		(cat ${cpio_tfile} | ${compr}  - > ${output_file}) \
+		(cat ${cpio_tfile} | ${compr} > ${output_file}) \
 		|| (rm -f ${output_file} ; false)
 	fi
 	[ -z ${cpio_file} ] && rm ${cpio_tfile}

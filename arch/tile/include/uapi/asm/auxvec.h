@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright 2010 Tilera Corporation. All Rights Reserved.
  *
@@ -15,6 +16,9 @@
 #ifndef _ASM_TILE_AUXVEC_H
 #define _ASM_TILE_AUXVEC_H
 
-/* No extensions to auxvec */
+/* The vDSO location. */
+#define AT_SYSINFO_EHDR         33
+
+#define AT_VECTOR_SIZE_ARCH 1 /* entries in ARCH_DLINFO */
 
 #endif /* _ASM_TILE_AUXVEC_H */

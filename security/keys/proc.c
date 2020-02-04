@@ -18,7 +18,6 @@
 #include <asm/errno.h>
 #include "internal.h"
 
-#ifdef CONFIG_KEYS_DEBUG_PROC_KEYS
 static int proc_keys_open(struct inode *inode, struct file *file);
 static void *proc_keys_start(struct seq_file *p, loff_t *_pos);
 static void *proc_keys_next(struct seq_file *p, void *v, loff_t *_pos);
@@ -38,7 +37,6 @@ static const struct file_operations proc_keys_fops = {
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };
-#endif
 
 static int proc_key_users_open(struct inode *inode, struct file *file);
 static void *proc_key_users_start(struct seq_file *p, loff_t *_pos);
@@ -67,11 +65,9 @@ static int __init key_proc_init(void)
 {
 	struct proc_dir_entry *p;
 
-#ifdef CONFIG_KEYS_DEBUG_PROC_KEYS
 	p = proc_create("keys", 0, NULL, &proc_keys_fops);
 	if (!p)
 		panic("Cannot create /proc/keys\n");
-#endif
 
 	p = proc_create("key-users", 0, NULL, &proc_key_users_fops);
 	if (!p)
@@ -86,8 +82,6 @@ __initcall(key_proc_init);
  * Implement "/proc/keys" to provide a list of the keys on the system that
  * grant View permission to the caller.
  */
-#ifdef CONFIG_KEYS_DEBUG_PROC_KEYS
-
 static struct rb_node *key_serial_next(struct seq_file *p, struct rb_node *n)
 {
 	struct user_namespace *user_ns = seq_user_ns(p);
@@ -182,14 +176,26 @@ static void proc_keys_stop(struct seq_file *p, void *v)
 
 static int proc_keys_show(struct seq_file *m, void *v)
 {
-	const struct cred *cred = current_cred();
 	struct rb_node *_p = v;
 	struct key *key = rb_entry(_p, struct key, serial_node);
 	struct timespec now;
+	time_t expiry;
 	unsigned long timo;
+	unsigned long flags;
 	key_ref_t key_ref, skey_ref;
 	char xbuf[16];
+	short state;
 	int rc;
+
+	struct keyring_search_context ctx = {
+		.index_key.type		= key->type,
+		.index_key.description	= key->description,
+		.cred			= m->file->f_cred,
+		.match_data.cmp		= lookup_user_key_possessed,
+		.match_data.raw_data	= key,
+		.match_data.lookup_type	= KEYRING_SEARCH_LOOKUP_DIRECT,
+		.flags			= KEYRING_SEARCH_NO_STATE_CHECK,
+	};
 
 	key_ref = make_key_ref(key, 0);
 
@@ -197,21 +203,15 @@ static int proc_keys_show(struct seq_file *m, void *v)
 	 * skip if the key does not indicate the possessor can view it
 	 */
 	if (key->perm & KEY_POS_VIEW) {
-		skey_ref = search_my_process_keyrings(key->type, key,
-						      lookup_user_key_possessed,
-						      true, cred);
+		skey_ref = search_my_process_keyrings(&ctx);
 		if (!IS_ERR(skey_ref)) {
 			key_ref_put(skey_ref);
 			key_ref = make_key_ref(key, 1);
 		}
 	}
 
-	/* check whether the current task is allowed to view the key (assuming
-	 * non-possession)
-	 * - the caller holds a spinlock, and thus the RCU read lock, making our
-	 *   access to __current_cred() safe
-	 */
-	rc = key_task_permission(key_ref, cred, KEY_VIEW);
+	/* check whether the current task is allowed to view the key */
+	rc = key_task_permission(key_ref, ctx.cred, KEY_NEED_VIEW);
 	if (rc < 0)
 		return 0;
 
@@ -220,12 +220,13 @@ static int proc_keys_show(struct seq_file *m, void *v)
 	rcu_read_lock();
 
 	/* come up with a suitable timeout value */
-	if (key->expiry == 0) {
+	expiry = READ_ONCE(key->expiry);
+	if (expiry == 0) {
 		memcpy(xbuf, "perm", 5);
-	} else if (now.tv_sec >= key->expiry) {
+	} else if (now.tv_sec >= expiry) {
 		memcpy(xbuf, "expd", 5);
 	} else {
-		timo = key->expiry - now.tv_sec;
+		timo = expiry - now.tv_sec;
 
 		if (timo < 60)
 			sprintf(xbuf, "%lus", timo);
@@ -239,19 +240,22 @@ static int proc_keys_show(struct seq_file *m, void *v)
 			sprintf(xbuf, "%luw", timo / (60*60*24*7));
 	}
 
-#define showflag(KEY, LETTER, FLAG) \
-	(test_bit(FLAG,	&(KEY)->flags) ? LETTER : '-')
+	state = key_read_state(key);
 
+#define showflag(FLAGS, LETTER, FLAG) \
+	((FLAGS & (1 << FLAG)) ? LETTER : '-')
+
+	flags = READ_ONCE(key->flags);
 	seq_printf(m, "%08x %c%c%c%c%c%c%c %5d %4s %08x %5d %5d %-9.9s ",
 		   key->serial,
-		   showflag(key, 'I', KEY_FLAG_INSTANTIATED),
-		   showflag(key, 'R', KEY_FLAG_REVOKED),
-		   showflag(key, 'D', KEY_FLAG_DEAD),
-		   showflag(key, 'Q', KEY_FLAG_IN_QUOTA),
-		   showflag(key, 'U', KEY_FLAG_USER_CONSTRUCT),
-		   showflag(key, 'N', KEY_FLAG_NEGATIVE),
-		   showflag(key, 'i', KEY_FLAG_INVALIDATED),
-		   atomic_read(&key->usage),
+		   state != KEY_IS_UNINSTANTIATED ? 'I' : '-',
+		   showflag(flags, 'R', KEY_FLAG_REVOKED),
+		   showflag(flags, 'D', KEY_FLAG_DEAD),
+		   showflag(flags, 'Q', KEY_FLAG_IN_QUOTA),
+		   showflag(flags, 'U', KEY_FLAG_USER_CONSTRUCT),
+		   state < 0 ? 'N' : '-',
+		   showflag(flags, 'i', KEY_FLAG_INVALIDATED),
+		   refcount_read(&key->usage),
 		   xbuf,
 		   key->perm,
 		   from_kuid_munged(seq_user_ns(m), key->uid),
@@ -267,8 +271,6 @@ static int proc_keys_show(struct seq_file *m, void *v)
 	rcu_read_unlock();
 	return 0;
 }
-
-#endif /* CONFIG_KEYS_DEBUG_PROC_KEYS */
 
 static struct rb_node *__key_user_next(struct user_namespace *user_ns, struct rb_node *n)
 {
@@ -341,7 +343,7 @@ static int proc_key_users_show(struct seq_file *m, void *v)
 
 	seq_printf(m, "%5u: %5d %d/%d %d/%d %d/%d\n",
 		   from_kuid_munged(seq_user_ns(m), user->uid),
-		   atomic_read(&user->usage),
+		   refcount_read(&user->usage),
 		   atomic_read(&user->nkeys),
 		   atomic_read(&user->nikeys),
 		   user->qnkeys,

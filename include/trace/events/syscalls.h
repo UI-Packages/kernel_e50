@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM raw_syscalls
 #undef TRACE_INCLUDE_FILE
@@ -13,9 +14,6 @@
 
 
 #ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
-
-extern void syscall_regfunc(void);
-extern void syscall_unregfunc(void);
 
 TRACE_EVENT_FN(sys_enter,
 

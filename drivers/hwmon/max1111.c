@@ -98,7 +98,7 @@ EXPORT_SYMBOL(max1111_read_channel);
  * likely to be used by hwmon applications to distinguish between
  * different devices, explicitly add a name attribute here.
  */
-static ssize_t show_name(struct device *dev,
+static ssize_t name_show(struct device *dev,
 			 struct device_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%s\n", to_spi_device(dev)->modalias);
@@ -125,7 +125,7 @@ static ssize_t show_adc(struct device *dev,
 #define MAX1111_ADC_ATTR(_id)		\
 	SENSOR_DEVICE_ATTR(in##_id##_input, S_IRUGO, show_adc, NULL, _id)
 
-static DEVICE_ATTR(name, S_IRUGO, show_name, NULL);
+static DEVICE_ATTR_RO(name);
 static MAX1111_ADC_ATTR(0);
 static MAX1111_ADC_ATTR(1);
 static MAX1111_ADC_ATTR(2);
@@ -195,10 +195,8 @@ static int max1111_probe(struct spi_device *spi)
 		return err;
 
 	data = devm_kzalloc(&spi->dev, sizeof(struct max1111_data), GFP_KERNEL);
-	if (data == NULL) {
-		dev_err(&spi->dev, "failed to allocate memory\n");
+	if (data == NULL)
 		return -ENOMEM;
-	}
 
 	switch (chip) {
 	case max1110:
@@ -285,7 +283,6 @@ MODULE_DEVICE_TABLE(spi, max1111_ids);
 static struct spi_driver max1111_driver = {
 	.driver		= {
 		.name	= "max1111",
-		.owner	= THIS_MODULE,
 	},
 	.id_table	= max1111_ids,
 	.probe		= max1111_probe,

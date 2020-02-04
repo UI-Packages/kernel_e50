@@ -1,11 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
  * Copyright 2004-2008 Analog Devices Inc.
  *
  * Licensed under the GPL-2 or later.
  */
 
-#ifndef _ASM_BLACKFIN_SIGCONTEXT_H
-#define _ASM_BLACKFIN_SIGCONTEXT_H
+#ifndef _UAPI_ASM_BLACKFIN_SIGCONTEXT_H
+#define _UAPI_ASM_BLACKFIN_SIGCONTEXT_H
 
 /* Add new entries at the end of the structure only.  */
 struct sigcontext {
@@ -58,4 +59,4 @@ struct sigcontext {
 	unsigned long sc_seqstat;
 };
 
-#endif
+#endif /* _UAPI_ASM_BLACKFIN_SIGCONTEXT_H */

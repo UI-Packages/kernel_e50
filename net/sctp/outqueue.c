@@ -22,16 +22,12 @@
  * See the GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with GNU CC; see the file COPYING.  If not, write to
- * the Free Software Foundation, 59 Temple Place - Suite 330,
- * Boston, MA 02111-1307, USA.
+ * along with GNU CC; see the file COPYING.  If not, see
+ * <http://www.gnu.org/licenses/>.
  *
  * Please send any bug reports or fixes you make to the
  * email address(es):
- *    lksctp developers <lksctp-developers@lists.sourceforge.net>
- *
- * Or submit a bug report through the following website:
- *    http://www.sf.net/projects/lksctp
+ *    lksctp developers <linux-sctp@vger.kernel.org>
  *
  * Written or modified by:
  *    La Monte H.P. Yarroll <piggy@acm.org>
@@ -41,9 +37,6 @@
  *    Hui Huang 	    <hui.huang@nokia.com>
  *    Sridhar Samudrala     <sri@us.ibm.com>
  *    Jon Grimm             <jgrimm@us.ibm.com>
- *
- * Any bugs reported given to us we will try to fix... any fixes shared will
- * be incorporated into the next SCTP release.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -75,7 +68,7 @@ static void sctp_mark_missing(struct sctp_outq *q,
 
 static void sctp_generate_fwdtsn(struct sctp_outq *q, __u32 sack_ctsn);
 
-static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout);
+static void sctp_outq_flush(struct sctp_outq *q, int rtx_timeout, gfp_t gfp);
 
 /* Add data to the front of the queue. */
 static inline void sctp_outq_head_data(struct sctp_outq *q,
@@ -117,7 +110,7 @@ static inline int sctp_cacc_skip_3_1_d(struct sctp_transport *primary,
 				       struct sctp_transport *transport,
 				       int count_of_newacks)
 {
-	if (count_of_newacks >=2 && transport != primary)
+	if (count_of_newacks >= 2 && transport != primary)
 		return 1;
 	return 0;
 }
@@ -214,8 +207,6 @@ void sctp_outq_init(struct sctp_association *asoc, struct sctp_outq *q)
 	INIT_LIST_HEAD(&q->retransmit);
 	INIT_LIST_HEAD(&q->sacked);
 	INIT_LIST_HEAD(&q->abandoned);
-
-	q->empty = 1;
 }
 
 /* Free the outqueue structure and any related pending chunks.
@@ -294,65 +285,39 @@ void sctp_outq_free(struct sctp_outq *q)
 }
 
 /* Put a new chunk in an sctp_outq.  */
-int sctp_outq_tail(struct sctp_outq *q, struct sctp_chunk *chunk)
+void sctp_outq_tail(struct sctp_outq *q, struct sctp_chunk *chunk, gfp_t gfp)
 {
 	struct net *net = sock_net(q->asoc->base.sk);
-	int error = 0;
 
-	SCTP_DEBUG_PRINTK("sctp_outq_tail(%p, %p[%s])\n",
-			  q, chunk, chunk && chunk->chunk_hdr ?
-			  sctp_cname(SCTP_ST_CHUNK(chunk->chunk_hdr->type))
-			  : "Illegal Chunk");
+	pr_debug("%s: outq:%p, chunk:%p[%s]\n", __func__, q, chunk,
+		 chunk && chunk->chunk_hdr ?
+		 sctp_cname(SCTP_ST_CHUNK(chunk->chunk_hdr->type)) :
+		 "illegal chunk");
 
 	/* If it is data, queue it up, otherwise, send it
 	 * immediately.
 	 */
 	if (sctp_chunk_is_data(chunk)) {
-		/* Is it OK to queue data chunks?  */
-		/* From 9. Termination of Association
-		 *
-		 * When either endpoint performs a shutdown, the
-		 * association on each peer will stop accepting new
-		 * data from its user and only deliver data in queue
-		 * at the time of sending or receiving the SHUTDOWN
-		 * chunk.
-		 */
-		switch (q->asoc->state) {
-		case SCTP_STATE_CLOSED:
-		case SCTP_STATE_SHUTDOWN_PENDING:
-		case SCTP_STATE_SHUTDOWN_SENT:
-		case SCTP_STATE_SHUTDOWN_RECEIVED:
-		case SCTP_STATE_SHUTDOWN_ACK_SENT:
-			/* Cannot send after transport endpoint shutdown */
-			error = -ESHUTDOWN;
-			break;
+		pr_debug("%s: outqueueing: outq:%p, chunk:%p[%s])\n",
+			 __func__, q, chunk, chunk && chunk->chunk_hdr ?
+			 sctp_cname(SCTP_ST_CHUNK(chunk->chunk_hdr->type)) :
+			 "illegal chunk");
 
-		default:
-			SCTP_DEBUG_PRINTK("outqueueing (%p, %p[%s])\n",
-			  q, chunk, chunk && chunk->chunk_hdr ?
-			  sctp_cname(SCTP_ST_CHUNK(chunk->chunk_hdr->type))
-			  : "Illegal Chunk");
-
-			sctp_outq_tail_data(q, chunk);
-			if (chunk->chunk_hdr->flags & SCTP_DATA_UNORDERED)
-				SCTP_INC_STATS(net, SCTP_MIB_OUTUNORDERCHUNKS);
-			else
-				SCTP_INC_STATS(net, SCTP_MIB_OUTORDERCHUNKS);
-			q->empty = 0;
-			break;
-		}
+		sctp_outq_tail_data(q, chunk);
+		if (chunk->asoc->peer.prsctp_capable &&
+		    SCTP_PR_PRIO_ENABLED(chunk->sinfo.sinfo_flags))
+			chunk->asoc->sent_cnt_removable++;
+		if (chunk->chunk_hdr->flags & SCTP_DATA_UNORDERED)
+			SCTP_INC_STATS(net, SCTP_MIB_OUTUNORDERCHUNKS);
+		else
+			SCTP_INC_STATS(net, SCTP_MIB_OUTORDERCHUNKS);
 	} else {
 		list_add_tail(&chunk->list, &q->control_chunk_list);
 		SCTP_INC_STATS(net, SCTP_MIB_OUTCTRLCHUNKS);
 	}
 
-	if (error < 0)
-		return error;
-
 	if (!q->cork)
-		error = sctp_outq_flush(q, 0);
-
-	return error;
+		sctp_outq_flush(q, 0, gfp);
 }
 
 /* Insert a chunk into the sorted list based on the TSNs.  The retransmit list
@@ -379,6 +344,106 @@ static void sctp_insert_list(struct list_head *head, struct list_head *new)
 	}
 	if (!done)
 		list_add_tail(new, head);
+}
+
+static int sctp_prsctp_prune_sent(struct sctp_association *asoc,
+				  struct sctp_sndrcvinfo *sinfo,
+				  struct list_head *queue, int msg_len)
+{
+	struct sctp_chunk *chk, *temp;
+
+	list_for_each_entry_safe(chk, temp, queue, transmitted_list) {
+		struct sctp_stream_out *streamout;
+
+		if (!SCTP_PR_PRIO_ENABLED(chk->sinfo.sinfo_flags) ||
+		    chk->sinfo.sinfo_timetolive <= sinfo->sinfo_timetolive)
+			continue;
+
+		list_del_init(&chk->transmitted_list);
+		sctp_insert_list(&asoc->outqueue.abandoned,
+				 &chk->transmitted_list);
+
+		streamout = &asoc->stream.out[chk->sinfo.sinfo_stream];
+		asoc->sent_cnt_removable--;
+		asoc->abandoned_sent[SCTP_PR_INDEX(PRIO)]++;
+		streamout->abandoned_sent[SCTP_PR_INDEX(PRIO)]++;
+
+		if (queue != &asoc->outqueue.retransmit &&
+		    !chk->tsn_gap_acked) {
+			if (chk->transport)
+				chk->transport->flight_size -=
+						sctp_data_size(chk);
+			asoc->outqueue.outstanding_bytes -= sctp_data_size(chk);
+		}
+
+		msg_len -= SCTP_DATA_SNDSIZE(chk) +
+			   sizeof(struct sk_buff) +
+			   sizeof(struct sctp_chunk);
+		if (msg_len <= 0)
+			break;
+	}
+
+	return msg_len;
+}
+
+static int sctp_prsctp_prune_unsent(struct sctp_association *asoc,
+				    struct sctp_sndrcvinfo *sinfo, int msg_len)
+{
+	struct sctp_outq *q = &asoc->outqueue;
+	struct sctp_chunk *chk, *temp;
+
+	list_for_each_entry_safe(chk, temp, &q->out_chunk_list, list) {
+		if (!SCTP_PR_PRIO_ENABLED(chk->sinfo.sinfo_flags) ||
+		    chk->sinfo.sinfo_timetolive <= sinfo->sinfo_timetolive)
+			continue;
+
+		list_del_init(&chk->list);
+		q->out_qlen -= chk->skb->len;
+		asoc->sent_cnt_removable--;
+		asoc->abandoned_unsent[SCTP_PR_INDEX(PRIO)]++;
+		if (chk->sinfo.sinfo_stream < asoc->stream.outcnt) {
+			struct sctp_stream_out *streamout =
+				&asoc->stream.out[chk->sinfo.sinfo_stream];
+
+			streamout->abandoned_unsent[SCTP_PR_INDEX(PRIO)]++;
+		}
+
+		msg_len -= SCTP_DATA_SNDSIZE(chk) +
+			   sizeof(struct sk_buff) +
+			   sizeof(struct sctp_chunk);
+		sctp_chunk_free(chk);
+		if (msg_len <= 0)
+			break;
+	}
+
+	return msg_len;
+}
+
+/* Abandon the chunks according their priorities */
+void sctp_prsctp_prune(struct sctp_association *asoc,
+		       struct sctp_sndrcvinfo *sinfo, int msg_len)
+{
+	struct sctp_transport *transport;
+
+	if (!asoc->peer.prsctp_capable || !asoc->sent_cnt_removable)
+		return;
+
+	msg_len = sctp_prsctp_prune_sent(asoc, sinfo,
+					 &asoc->outqueue.retransmit,
+					 msg_len);
+	if (msg_len <= 0)
+		return;
+
+	list_for_each_entry(transport, &asoc->peer.transport_addr_list,
+			    transports) {
+		msg_len = sctp_prsctp_prune_sent(asoc, sinfo,
+						 &transport->transmitted,
+						 msg_len);
+		if (msg_len <= 0)
+			return;
+	}
+
+	sctp_prsctp_prune_unsent(asoc, sinfo, msg_len);
 }
 
 /* Mark all the eligible packets on a transport for retransmission.  */
@@ -460,26 +525,21 @@ void sctp_retransmit_mark(struct sctp_outq *q,
 		}
 	}
 
-	SCTP_DEBUG_PRINTK("%s: transport: %p, reason: %d, "
-			  "cwnd: %d, ssthresh: %d, flight_size: %d, "
-			  "pba: %d\n", __func__,
-			  transport, reason,
-			  transport->cwnd, transport->ssthresh,
-			  transport->flight_size,
-			  transport->partial_bytes_acked);
-
+	pr_debug("%s: transport:%p, reason:%d, cwnd:%d, ssthresh:%d, "
+		 "flight_size:%d, pba:%d\n", __func__, transport, reason,
+		 transport->cwnd, transport->ssthresh, transport->flight_size,
+		 transport->partial_bytes_acked);
 }
 
 /* Mark all the eligible packets on a transport for retransmission and force
  * one packet out.
  */
 void sctp_retransmit(struct sctp_outq *q, struct sctp_transport *transport,
-		     sctp_retransmit_reason_t reason)
+		     enum sctp_retransmit_reason reason)
 {
 	struct net *net = sock_net(q->asoc->base.sk);
-	int error = 0;
 
-	switch(reason) {
+	switch (reason) {
 	case SCTP_RTXR_T3_RTX:
 		SCTP_INC_STATS(net, SCTP_MIB_T3_RETRANSMITS);
 		sctp_transport_lower_cwnd(transport, SCTP_LOWER_CWND_T3_RTX);
@@ -521,10 +581,7 @@ void sctp_retransmit(struct sctp_outq *q, struct sctp_transport *transport,
 	 * will be flushed at the end.
 	 */
 	if (reason != SCTP_RTXR_FAST_RTX)
-		error = sctp_outq_flush(q, /* rtx_timeout */ 1);
-
-	if (error)
-		q->asoc->base.sk->sk_err = -error;
+		sctp_outq_flush(q, /* rtx_timeout */ 1, GFP_ATOMIC);
 }
 
 /*
@@ -538,14 +595,14 @@ void sctp_retransmit(struct sctp_outq *q, struct sctp_transport *transport,
 static int sctp_outq_flush_rtx(struct sctp_outq *q, struct sctp_packet *pkt,
 			       int rtx_timeout, int *start_timer)
 {
-	struct list_head *lqueue;
 	struct sctp_transport *transport = pkt->transport;
-	sctp_xmit_t status;
 	struct sctp_chunk *chunk, *chunk1;
-	int fast_rtx;
+	struct list_head *lqueue;
+	enum sctp_xmit status;
 	int error = 0;
 	int timer = 0;
 	int done = 0;
+	int fast_rtx;
 
 	lqueue = &q->retransmit;
 	fast_rtx = q->fast_rtx;
@@ -612,12 +669,12 @@ redo:
 				 * control chunks are already freed so there
 				 * is nothing we can do.
 				 */
-				sctp_packet_transmit(pkt);
+				sctp_packet_transmit(pkt, GFP_ATOMIC);
 				goto redo;
 			}
 
 			/* Send this packet.  */
-			error = sctp_packet_transmit(pkt);
+			error = sctp_packet_transmit(pkt, GFP_ATOMIC);
 
 			/* If we are retransmitting, we should only
 			 * send a single packet.
@@ -633,7 +690,7 @@ redo:
 
 		case SCTP_XMIT_RWND_FULL:
 			/* Send this packet. */
-			error = sctp_packet_transmit(pkt);
+			error = sctp_packet_transmit(pkt, GFP_ATOMIC);
 
 			/* Stop sending DATA as there is no more room
 			 * at the receiver.
@@ -641,9 +698,9 @@ redo:
 			done = 1;
 			break;
 
-		case SCTP_XMIT_NAGLE_DELAY:
+		case SCTP_XMIT_DELAY:
 			/* Send this packet. */
-			error = sctp_packet_transmit(pkt);
+			error = sctp_packet_transmit(pkt, GFP_ATOMIC);
 
 			/* Stop sending DATA because of nagle delay. */
 			done = 1;
@@ -662,7 +719,6 @@ redo:
 			if (chunk->fast_retransmit == SCTP_NEED_FRTX)
 				chunk->fast_retransmit = SCTP_DONT_FRTX;
 
-			q->empty = 0;
 			q->asoc->stats.rtxchunks++;
 			break;
 		}
@@ -697,12 +753,12 @@ redo:
 }
 
 /* Cork the outqueue so queued chunks are really queued. */
-int sctp_outq_uncork(struct sctp_outq *q)
+void sctp_outq_uncork(struct sctp_outq *q, gfp_t gfp)
 {
 	if (q->cork)
 		q->cork = 0;
 
-	return sctp_outq_flush(q, 0);
+	sctp_outq_flush(q, 0, gfp);
 }
 
 
@@ -715,7 +771,7 @@ int sctp_outq_uncork(struct sctp_outq *q)
  * locking concerns must be made.  Today we use the sock lock to protect
  * this function.
  */
-static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
+static void sctp_outq_flush(struct sctp_outq *q, int rtx_timeout, gfp_t gfp)
 {
 	struct sctp_packet *packet;
 	struct sctp_packet singleton;
@@ -726,7 +782,7 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 	struct sctp_transport *transport = NULL;
 	struct sctp_transport *new_transport;
 	struct sctp_chunk *chunk, *tmp;
-	sctp_xmit_t status;
+	enum sctp_xmit status;
 	int error = 0;
 	int start_timer = 0;
 	int one_packet = 0;
@@ -837,9 +893,11 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 			sctp_packet_init(&singleton, transport, sport, dport);
 			sctp_packet_config(&singleton, vtag, 0);
 			sctp_packet_append_chunk(&singleton, chunk);
-			error = sctp_packet_transmit(&singleton);
-			if (error < 0)
-				return error;
+			error = sctp_packet_transmit(&singleton, gfp);
+			if (error < 0) {
+				asoc->base.sk->sk_err = -error;
+				return;
+			}
 			break;
 
 		case SCTP_CID_ABORT:
@@ -867,20 +925,28 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 		case SCTP_CID_ECN_ECNE:
 		case SCTP_CID_ASCONF:
 		case SCTP_CID_FWD_TSN:
+		case SCTP_CID_RECONF:
 			status = sctp_packet_transmit_chunk(packet, chunk,
-							    one_packet);
+							    one_packet, gfp);
 			if (status  != SCTP_XMIT_OK) {
 				/* put the chunk back */
 				list_add(&chunk->list, &q->control_chunk_list);
-			} else {
-				asoc->stats.octrlchunks++;
-				/* PR-SCTP C5) If a FORWARD TSN is sent, the
-				 * sender MUST assure that at least one T3-rtx
-				 * timer is running.
-				 */
-				if (chunk->chunk_hdr->type == SCTP_CID_FWD_TSN)
-					sctp_transport_reset_timers(transport);
+				break;
 			}
+
+			asoc->stats.octrlchunks++;
+			/* PR-SCTP C5) If a FORWARD TSN is sent, the
+			 * sender MUST assure that at least one T3-rtx
+			 * timer is running.
+			 */
+			if (chunk->chunk_hdr->type == SCTP_CID_FWD_TSN) {
+				sctp_transport_reset_t3_rtx(transport);
+				transport->last_time_sent = jiffies;
+			}
+
+			if (chunk == asoc->strreset_chunk)
+				sctp_transport_reset_reconf_timer(transport);
+
 			break;
 
 		default:
@@ -935,9 +1001,13 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 		retran:
 			error = sctp_outq_flush_rtx(q, packet,
 						    rtx_timeout, &start_timer);
+			if (error < 0)
+				asoc->base.sk->sk_err = -error;
 
-			if (start_timer)
-				sctp_transport_reset_timers(transport);
+			if (start_timer) {
+				sctp_transport_reset_t3_rtx(transport);
+				transport->last_time_sent = jiffies;
+			}
 
 			/* This can happen on COOKIE-ECHO resend.  Only
 			 * one chunk can get bundled with a COOKIE-ECHO.
@@ -962,14 +1032,18 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 
 		/* Finally, transmit new packets.  */
 		while ((chunk = sctp_outq_dequeue_data(q)) != NULL) {
+			__u32 sid = ntohs(chunk->subh.data_hdr->stream);
+
 			/* RFC 2960 6.5 Every DATA chunk MUST carry a valid
 			 * stream identifier.
 			 */
-			if (chunk->sinfo.sinfo_stream >=
-			    asoc->c.sinit_num_ostreams) {
+			if (chunk->sinfo.sinfo_stream >= asoc->stream.outcnt) {
 
 				/* Mark as failed send. */
 				sctp_chunk_fail(chunk, SCTP_ERROR_INV_STRM);
+				if (asoc->peer.prsctp_capable &&
+				    SCTP_PR_PRIO_ENABLED(chunk->sinfo.sinfo_flags))
+					asoc->sent_cnt_removable--;
 				sctp_chunk_free(chunk);
 				continue;
 			}
@@ -981,6 +1055,11 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 				continue;
 			}
 
+			if (asoc->stream.out[sid].state == SCTP_STREAM_CLOSED) {
+				sctp_outq_head_data(q, chunk);
+				goto sctp_flush_out;
+			}
+
 			/* If there is a specified transport, use it.
 			 * Otherwise, we want to use the active path.
 			 */
@@ -990,8 +1069,12 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 			     (new_transport->state == SCTP_UNCONFIRMED) ||
 			     (new_transport->state == SCTP_PF)))
 				new_transport = asoc->peer.active_path;
-			if (new_transport->state == SCTP_UNCONFIRMED)
+			if (new_transport->state == SCTP_UNCONFIRMED) {
+				WARN_ONCE(1, "Attempt to send packet on unconfirmed path.");
+				sctp_chunk_fail(chunk, 0);
+				sctp_chunk_free(chunk);
 				continue;
+			}
 
 			/* Change packets if necessary.  */
 			if (new_transport != transport) {
@@ -1014,37 +1097,30 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 				sctp_transport_burst_limited(transport);
 			}
 
-			SCTP_DEBUG_PRINTK("sctp_outq_flush(%p, %p[%s]), ",
-					  q, chunk,
-					  chunk && chunk->chunk_hdr ?
-					  sctp_cname(SCTP_ST_CHUNK(
-						  chunk->chunk_hdr->type))
-					  : "Illegal Chunk");
-
-			SCTP_DEBUG_PRINTK("TX TSN 0x%x skb->head "
-					"%p skb->users %d.\n",
-					ntohl(chunk->subh.data_hdr->tsn),
-					chunk->skb ?chunk->skb->head : NULL,
-					chunk->skb ?
-					atomic_read(&chunk->skb->users) : -1);
+			pr_debug("%s: outq:%p, chunk:%p[%s], tx-tsn:0x%x skb->head:%p "
+				 "skb->users:%d\n",
+				 __func__, q, chunk, chunk && chunk->chunk_hdr ?
+				 sctp_cname(SCTP_ST_CHUNK(chunk->chunk_hdr->type)) :
+				 "illegal chunk", ntohl(chunk->subh.data_hdr->tsn),
+				 chunk->skb ? chunk->skb->head : NULL, chunk->skb ?
+				 refcount_read(&chunk->skb->users) : -1);
 
 			/* Add the chunk to the packet.  */
-			status = sctp_packet_transmit_chunk(packet, chunk, 0);
+			status = sctp_packet_transmit_chunk(packet, chunk, 0, gfp);
 
 			switch (status) {
 			case SCTP_XMIT_PMTU_FULL:
 			case SCTP_XMIT_RWND_FULL:
-			case SCTP_XMIT_NAGLE_DELAY:
+			case SCTP_XMIT_DELAY:
 				/* We could not append this chunk, so put
 				 * the chunk back on the output queue.
 				 */
-				SCTP_DEBUG_PRINTK("sctp_outq_flush: could "
-					"not transmit TSN: 0x%x, status: %d\n",
-					ntohl(chunk->subh.data_hdr->tsn),
-					status);
+				pr_debug("%s: could not transmit tsn:0x%x, status:%d\n",
+					 __func__, ntohl(chunk->subh.data_hdr->tsn),
+					 status);
+
 				sctp_outq_head_data(q, chunk);
 				goto sctp_flush_out;
-				break;
 
 			case SCTP_XMIT_OK:
 				/* The sender is in the SHUTDOWN-PENDING state,
@@ -1077,9 +1153,8 @@ static int sctp_outq_flush(struct sctp_outq *q, int rtx_timeout)
 			list_add_tail(&chunk->transmitted_list,
 				      &transport->transmitted);
 
-			sctp_transport_reset_timers(transport);
-
-			q->empty = 0;
+			sctp_transport_reset_t3_rtx(transport);
+			transport->last_time_sent = jiffies;
 
 			/* Only let one DATA chunk get bundled with a
 			 * COOKIE-ECHO chunk.
@@ -1103,26 +1178,27 @@ sctp_flush_out:
 	 *
 	 * --xguo
 	 */
-	while ((ltransport = sctp_list_dequeue(&transport_list)) != NULL ) {
+	while ((ltransport = sctp_list_dequeue(&transport_list)) != NULL) {
 		struct sctp_transport *t = list_entry(ltransport,
 						      struct sctp_transport,
 						      send_ready);
 		packet = &t->packet;
-		if (!sctp_packet_empty(packet))
-			error = sctp_packet_transmit(packet);
+		if (!sctp_packet_empty(packet)) {
+			error = sctp_packet_transmit(packet, gfp);
+			if (error < 0)
+				asoc->base.sk->sk_err = -error;
+		}
 
 		/* Clear the burst limited state, if any */
 		sctp_transport_burst_reset(t);
 	}
-
-	return error;
 }
 
 /* Update unack_data based on the incoming SACK chunk */
 static void sctp_sack_update_unack_data(struct sctp_association *assoc,
 					struct sctp_sackhdr *sack)
 {
-	sctp_sack_variable_t *frags;
+	union sctp_sack_variable *frags;
 	__u16 unack_data;
 	int i;
 
@@ -1149,7 +1225,7 @@ int sctp_outq_sack(struct sctp_outq *q, struct sctp_chunk *chunk)
 	struct sctp_transport *transport;
 	struct sctp_chunk *tchunk = NULL;
 	struct list_head *lchunk, *transport_list, *temp;
-	sctp_sack_variable_t *frags = sack->variable;
+	union sctp_sack_variable *frags = sack->variable;
 	__u32 sack_ctsn, ctsn, tsn;
 	__u32 highest_tsn, highest_new_tsn;
 	__u32 sack_a_rwnd;
@@ -1232,7 +1308,7 @@ int sctp_outq_sack(struct sctp_outq *q, struct sctp_chunk *chunk)
 		 * destinations for which cacc_saw_newack is set.
 		 */
 		if (transport->cacc.cacc_saw_newack)
-			count_of_newacks ++;
+			count_of_newacks++;
 	}
 
 	/* Move the Cumulative TSN Ack Point if appropriate.  */
@@ -1263,6 +1339,9 @@ int sctp_outq_sack(struct sctp_outq *q, struct sctp_chunk *chunk)
 		tsn = ntohl(tchunk->subh.data_hdr->tsn);
 		if (TSN_lte(tsn, ctsn)) {
 			list_del_init(&tchunk->transmitted_list);
+			if (asoc->peer.prsctp_capable &&
+			    SCTP_PR_PRIO_ENABLED(chunk->sinfo.sinfo_flags))
+				asoc->sent_cnt_removable--;
 			sctp_chunk_free(tchunk);
 		}
 	}
@@ -1273,6 +1352,7 @@ int sctp_outq_sack(struct sctp_outq *q, struct sctp_chunk *chunk)
 	 */
 
 	sack_a_rwnd = ntohl(sack->a_rwnd);
+	asoc->peer.zero_window_announced = !sack_a_rwnd;
 	outstanding = q->outstanding_bytes;
 
 	if (outstanding < sack_a_rwnd)
@@ -1284,35 +1364,22 @@ int sctp_outq_sack(struct sctp_outq *q, struct sctp_chunk *chunk)
 
 	sctp_generate_fwdtsn(q, sack_ctsn);
 
-	SCTP_DEBUG_PRINTK("%s: sack Cumulative TSN Ack is 0x%x.\n",
-			  __func__, sack_ctsn);
-	SCTP_DEBUG_PRINTK("%s: Cumulative TSN Ack of association, "
-			  "%p is 0x%x. Adv peer ack point: 0x%x\n",
-			  __func__, asoc, ctsn, asoc->adv_peer_ack_point);
+	pr_debug("%s: sack cumulative tsn ack:0x%x\n", __func__, sack_ctsn);
+	pr_debug("%s: cumulative tsn ack of assoc:%p is 0x%x, "
+		 "advertised peer ack point:0x%x\n", __func__, asoc, ctsn,
+		 asoc->adv_peer_ack_point);
 
-	/* See if all chunks are acked.
-	 * Make sure the empty queue handler will get run later.
-	 */
-	q->empty = (list_empty(&q->out_chunk_list) &&
-		    list_empty(&q->retransmit));
-	if (!q->empty)
-		goto finish;
-
-	list_for_each_entry(transport, transport_list, transports) {
-		q->empty = q->empty && list_empty(&transport->transmitted);
-		if (!q->empty)
-			goto finish;
-	}
-
-	SCTP_DEBUG_PRINTK("sack queue is empty.\n");
-finish:
-	return q->empty;
+	return sctp_outq_is_empty(q);
 }
 
-/* Is the outqueue empty?  */
+/* Is the outqueue empty?
+ * The queue is empty when we have not pending data, no in-flight data
+ * and nothing pending retransmissions.
+ */
 int sctp_outq_is_empty(const struct sctp_outq *q)
 {
-	return q->empty;
+	return q->out_qlen == 0 && q->outstanding_bytes == 0 &&
+	       list_empty(&q->retransmit);
 }
 
 /********************************************************************
@@ -1345,21 +1412,7 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 	__u8 restart_timer = 0;
 	int bytes_acked = 0;
 	int migrate_bytes = 0;
-
-	/* These state variables are for coherent debug output. --xguo */
-
-#if SCTP_DEBUG
-	__u32 dbg_ack_tsn = 0;	/* An ACKed TSN range starts here... */
-	__u32 dbg_last_ack_tsn = 0;  /* ...and finishes here.	     */
-	__u32 dbg_kept_tsn = 0;	/* An un-ACKed range starts here...  */
-	__u32 dbg_last_kept_tsn = 0; /* ...and finishes here.	     */
-
-	/* 0 : The last TSN was ACKed.
-	 * 1 : The last TSN was NOT ACKed (i.e. KEPT).
-	 * -1: We need to initialize.
-	 */
-	int dbg_prt_state = -1;
-#endif /* SCTP_DEBUG */
+	bool forward_progress = false;
 
 	sack_ctsn = ntohl(sack->cum_tsn_ack);
 
@@ -1377,7 +1430,8 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 			/* If this chunk has not been acked, stop
 			 * considering it as 'outstanding'.
 			 */
-			if (!tchunk->tsn_gap_acked) {
+			if (transmitted_queue != &q->retransmit &&
+			    !tchunk->tsn_gap_acked) {
 				if (tchunk->transport)
 					tchunk->transport->flight_size -=
 							sctp_data_size(tchunk);
@@ -1406,6 +1460,7 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 				 * instance).
 				 */
 				if (!tchunk->tsn_gap_acked &&
+				    !sctp_chunk_retransmitted(tchunk) &&
 				    tchunk->rtt_in_progress) {
 					tchunk->rtt_in_progress = 0;
 					rtt = jiffies - tchunk->sent_at;
@@ -1422,10 +1477,12 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 			 */
 			if (!tchunk->tsn_gap_acked) {
 				tchunk->tsn_gap_acked = 1;
-				*highest_new_tsn_in_sack = tsn;
+				if (TSN_lt(*highest_new_tsn_in_sack, tsn))
+					*highest_new_tsn_in_sack = tsn;
 				bytes_acked += sctp_data_size(tchunk);
 				if (!tchunk->transport)
 					migrate_bytes += sctp_data_size(tchunk);
+				forward_progress = true;
 			}
 
 			if (TSN_lte(tsn, sack_ctsn)) {
@@ -1439,6 +1496,7 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 				 * current RTO.
 				 */
 				restart_timer = 1;
+				forward_progress = true;
 
 				if (!tchunk->tsn_gap_acked) {
 					/*
@@ -1482,57 +1540,11 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 				 */
 				list_add_tail(lchunk, &tlist);
 			}
-
-#if SCTP_DEBUG
-			switch (dbg_prt_state) {
-			case 0:	/* last TSN was ACKed */
-				if (dbg_last_ack_tsn + 1 == tsn) {
-					/* This TSN belongs to the
-					 * current ACK range.
-					 */
-					break;
-				}
-
-				if (dbg_last_ack_tsn != dbg_ack_tsn) {
-					/* Display the end of the
-					 * current range.
-					 */
-					SCTP_DEBUG_PRINTK_CONT("-%08x",
-							       dbg_last_ack_tsn);
-				}
-
-				/* Start a new range.  */
-				SCTP_DEBUG_PRINTK_CONT(",%08x", tsn);
-				dbg_ack_tsn = tsn;
-				break;
-
-			case 1:	/* The last TSN was NOT ACKed. */
-				if (dbg_last_kept_tsn != dbg_kept_tsn) {
-					/* Display the end of current range. */
-					SCTP_DEBUG_PRINTK_CONT("-%08x",
-							       dbg_last_kept_tsn);
-				}
-
-				SCTP_DEBUG_PRINTK_CONT("\n");
-
-				/* FALL THROUGH... */
-			default:
-				/* This is the first-ever TSN we examined.  */
-				/* Start a new range of ACK-ed TSNs.  */
-				SCTP_DEBUG_PRINTK("ACKed: %08x", tsn);
-				dbg_prt_state = 0;
-				dbg_ack_tsn = tsn;
-			}
-
-			dbg_last_ack_tsn = tsn;
-#endif /* SCTP_DEBUG */
-
 		} else {
 			if (tchunk->tsn_gap_acked) {
-				SCTP_DEBUG_PRINTK("%s: Receiver reneged on "
-						  "data TSN: 0x%x\n",
-						  __func__,
-						  tsn);
+				pr_debug("%s: receiver reneged on data TSN:0x%x\n",
+					 __func__, tsn);
+
 				tchunk->tsn_gap_acked = 0;
 
 				if (tchunk->transport)
@@ -1551,59 +1563,9 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 			}
 
 			list_add_tail(lchunk, &tlist);
-
-#if SCTP_DEBUG
-			/* See the above comments on ACK-ed TSNs. */
-			switch (dbg_prt_state) {
-			case 1:
-				if (dbg_last_kept_tsn + 1 == tsn)
-					break;
-
-				if (dbg_last_kept_tsn != dbg_kept_tsn)
-					SCTP_DEBUG_PRINTK_CONT("-%08x",
-							       dbg_last_kept_tsn);
-
-				SCTP_DEBUG_PRINTK_CONT(",%08x", tsn);
-				dbg_kept_tsn = tsn;
-				break;
-
-			case 0:
-				if (dbg_last_ack_tsn != dbg_ack_tsn)
-					SCTP_DEBUG_PRINTK_CONT("-%08x",
-							       dbg_last_ack_tsn);
-				SCTP_DEBUG_PRINTK_CONT("\n");
-
-				/* FALL THROUGH... */
-			default:
-				SCTP_DEBUG_PRINTK("KEPT: %08x",tsn);
-				dbg_prt_state = 1;
-				dbg_kept_tsn = tsn;
-			}
-
-			dbg_last_kept_tsn = tsn;
-#endif /* SCTP_DEBUG */
 		}
 	}
 
-#if SCTP_DEBUG
-	/* Finish off the last range, displaying its ending TSN.  */
-	switch (dbg_prt_state) {
-	case 0:
-		if (dbg_last_ack_tsn != dbg_ack_tsn) {
-			SCTP_DEBUG_PRINTK_CONT("-%08x\n", dbg_last_ack_tsn);
-		} else {
-			SCTP_DEBUG_PRINTK_CONT("\n");
-		}
-	break;
-
-	case 1:
-		if (dbg_last_kept_tsn != dbg_kept_tsn) {
-			SCTP_DEBUG_PRINTK_CONT("-%08x\n", dbg_last_kept_tsn);
-		} else {
-			SCTP_DEBUG_PRINTK_CONT("\n");
-		}
-	}
-#endif /* SCTP_DEBUG */
 	if (transport) {
 		if (bytes_acked) {
 			struct sctp_association *asoc = transport->asoc;
@@ -1625,6 +1587,7 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 			 */
 			transport->error_count = 0;
 			transport->asoc->overall_error_count = 0;
+			forward_progress = true;
 
 			/*
 			 * While in SHUTDOWN PENDING, we may have started
@@ -1676,9 +1639,9 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 			    !list_empty(&tlist) &&
 			    (sack_ctsn+2 == q->asoc->next_tsn) &&
 			    q->asoc->state < SCTP_STATE_SHUTDOWN_PENDING) {
-				SCTP_DEBUG_PRINTK("%s: SACK received for zero "
-						  "window probe: %u\n",
-						  __func__, sack_ctsn);
+				pr_debug("%s: sack received for zero window "
+					 "probe:%u\n", __func__, sack_ctsn);
+
 				q->asoc->overall_error_count = 0;
 				transport->error_count = 0;
 			}
@@ -1697,6 +1660,11 @@ static void sctp_check_transmitted(struct sctp_outq *q,
 			if (!mod_timer(&transport->T3_rtx_timer,
 				       jiffies + transport->rto))
 				sctp_transport_hold(transport);
+		}
+
+		if (forward_progress) {
+			if (transport->dst)
+				sctp_transport_dst_confirm(transport);
 		}
 	}
 
@@ -1739,10 +1707,8 @@ static void sctp_mark_missing(struct sctp_outq *q,
 						count_of_newacks, tsn)) {
 				chunk->tsn_missing_report++;
 
-				SCTP_DEBUG_PRINTK(
-					"%s: TSN 0x%x missing counter: %d\n",
-					__func__, tsn,
-					chunk->tsn_missing_report);
+				pr_debug("%s: tsn:0x%x missing counter:%d\n",
+					 __func__, tsn, chunk->tsn_missing_report);
 			}
 		}
 		/*
@@ -1762,21 +1728,20 @@ static void sctp_mark_missing(struct sctp_outq *q,
 		if (do_fast_retransmit)
 			sctp_retransmit(q, transport, SCTP_RTXR_FAST_RTX);
 
-		SCTP_DEBUG_PRINTK("%s: transport: %p, cwnd: %d, "
-				  "ssthresh: %d, flight_size: %d, pba: %d\n",
-				  __func__, transport, transport->cwnd,
-				  transport->ssthresh, transport->flight_size,
-				  transport->partial_bytes_acked);
+		pr_debug("%s: transport:%p, cwnd:%d, ssthresh:%d, "
+			 "flight_size:%d, pba:%d\n",  __func__, transport,
+			 transport->cwnd, transport->ssthresh,
+			 transport->flight_size, transport->partial_bytes_acked);
 	}
 }
 
 /* Is the given TSN acked by this packet?  */
 static int sctp_acked(struct sctp_sackhdr *sack, __u32 tsn)
 {
-	int i;
-	sctp_sack_variable_t *frags;
-	__u16 gap;
 	__u32 ctsn = ntohl(sack->cum_tsn_ack);
+	union sctp_sack_variable *frags;
+	__u16 tsn_offset, blocks;
+	int i;
 
 	if (TSN_lte(tsn, ctsn))
 		goto pass;
@@ -1794,10 +1759,11 @@ static int sctp_acked(struct sctp_sackhdr *sack, __u32 tsn)
 	 */
 
 	frags = sack->variable;
-	gap = tsn - ctsn;
-	for (i = 0; i < ntohs(sack->num_gap_ack_blocks); ++i) {
-		if (TSN_lte(ntohs(frags[i].gab.start), gap) &&
-		    TSN_lte(gap, ntohs(frags[i].gab.end)))
+	blocks = ntohs(sack->num_gap_ack_blocks);
+	tsn_offset = tsn - ctsn;
+	for (i = 0; i < blocks; ++i) {
+		if (tsn_offset >= ntohs(frags[i].gab.start) &&
+		    tsn_offset <= ntohs(frags[i].gab.end))
 			goto pass;
 	}
 

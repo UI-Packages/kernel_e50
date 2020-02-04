@@ -1,8 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_NET_SCM_H
 #define __LINUX_NET_SCM_H
 
 #include <linux/limits.h>
 #include <linux/net.h>
+#include <linux/cred.h>
 #include <linux/security.h>
 #include <linux/pid.h>
 #include <linux/nsproxy.h>
@@ -34,11 +36,11 @@ struct scm_cookie {
 #endif
 };
 
-extern void scm_detach_fds(struct msghdr *msg, struct scm_cookie *scm);
-extern void scm_detach_fds_compat(struct msghdr *msg, struct scm_cookie *scm);
-extern int __scm_send(struct socket *sock, struct msghdr *msg, struct scm_cookie *scm);
-extern void __scm_destroy(struct scm_cookie *scm);
-extern struct scm_fp_list * scm_fp_dup(struct scm_fp_list *fpl);
+void scm_detach_fds(struct msghdr *msg, struct scm_cookie *scm);
+void scm_detach_fds_compat(struct msghdr *msg, struct scm_cookie *scm);
+int __scm_send(struct socket *sock, struct msghdr *msg, struct scm_cookie *scm);
+void __scm_destroy(struct scm_cookie *scm);
+struct scm_fp_list *scm_fp_dup(struct scm_fp_list *fpl);
 
 #ifdef CONFIG_SECURITY_NETWORK
 static __inline__ void unix_get_peersec_dgram(struct socket *sock, struct scm_cookie *scm)

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Smp timebase synchronization for ppc.
  *
@@ -9,7 +10,6 @@
 #include <linux/sched.h>
 #include <linux/smp.h>
 #include <linux/unistd.h>
-#include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/atomic.h>
 #include <asm/smp.h>

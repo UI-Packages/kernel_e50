@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _NF_CONNTRACK_TSTAMP_H
 #define _NF_CONNTRACK_TSTAMP_H
 
@@ -48,11 +49,11 @@ static inline void nf_ct_set_tstamp(struct net *net, bool enable)
 }
 
 #ifdef CONFIG_NF_CONNTRACK_TIMESTAMP
-extern int nf_conntrack_tstamp_pernet_init(struct net *net);
-extern void nf_conntrack_tstamp_pernet_fini(struct net *net);
+int nf_conntrack_tstamp_pernet_init(struct net *net);
+void nf_conntrack_tstamp_pernet_fini(struct net *net);
 
-extern int nf_conntrack_tstamp_init(void);
-extern void nf_conntrack_tstamp_fini(void);
+int nf_conntrack_tstamp_init(void);
+void nf_conntrack_tstamp_fini(void);
 #else
 static inline int nf_conntrack_tstamp_pernet_init(struct net *net)
 {

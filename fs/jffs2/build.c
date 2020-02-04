@@ -17,6 +17,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/mtd/mtd.h>
+#include <linux/mm.h> /* kvfree() */
 #include "nodelist.h"
 
 static void jffs2_build_remove_unlinked_inode(struct jffs2_sb_info *,
@@ -115,6 +116,16 @@ static int jffs2_build_filesystem(struct jffs2_sb_info *c)
 
 	dbg_fsbuild("scanned flash completely\n");
 	jffs2_dbg_dump_block_lists_nolock(c);
+
+	if (c->flags & (1 << 7)) {
+		printk("%s(): unlocking the mtd device... ", __func__);
+		mtd_unlock(c->mtd, 0, c->mtd->size);
+		printk("done.\n");
+
+		printk("%s(): erasing all blocks after the end marker... ", __func__);
+		jffs2_erase_pending_blocks(c, -1);
+		printk("done.\n");
+	}
 
 	dbg_fsbuild("pass 1 starting\n");
 	c->flags |= JFFS2_SB_FLAG_BUILDING;
@@ -422,12 +433,7 @@ int jffs2_do_mount_fs(struct jffs2_sb_info *c)
 	return 0;
 
  out_free:
-#ifndef __ECOS
-	if (jffs2_blocks_use_vmalloc(c))
-		vfree(c->blocks);
-	else
-#endif
-		kfree(c->blocks);
+	kvfree(c->blocks);
 
 	return ret;
 }

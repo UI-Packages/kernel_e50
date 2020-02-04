@@ -1,78 +1,106 @@
-/**************************************************************************
+/*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  *
- *  BRIEF MODULE DESCRIPTION
- *     reboot/reset setting for Ralink RT2880 solution
- *
- *  Copyright 2007 Ralink Inc. (bruce_chang@ralinktech.com.tw)
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
- *  THIS  SOFTWARE  IS PROVIDED   ``AS  IS'' AND   ANY  EXPRESS OR IMPLIED
- *  WARRANTIES,   INCLUDING, BUT NOT  LIMITED  TO, THE IMPLIED WARRANTIES OF
- *  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- *  NO  EVENT  SHALL   THE AUTHOR  BE    LIABLE FOR ANY   DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED   TO, PROCUREMENT OF  SUBSTITUTE GOODS  OR SERVICES; LOSS OF
- *  USE, DATA,  OR PROFITS; OR  BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN  CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *  You should have received a copy of the  GNU General Public License along
- *  with this program; if not, write  to the Free Software Foundation, Inc.,
- *  675 Mass Ave, Cambridge, MA 02139, USA.
- *
- *
- **************************************************************************
- * May 2007 Bruce Chang
- *
- * Initial Release
- *
- *
- *
- **************************************************************************
+ * Copyright (C) 2008-2009 Gabor Juhos <juhosg@openwrt.org>
+ * Copyright (C) 2008 Imre Kaloz <kaloz@openwrt.org>
+ * Copyright (C) 2013 John Crispin <john@phrozen.org>
  */
 
-
+#include <linux/pm.h>
+#include <linux/io.h>
+#include <linux/of.h>
+#include <linux/delay.h>
+#include <linux/reset-controller.h>
 
 #include <asm/reboot.h>
-#include <asm/mach-ralink/generic.h>
-#include <linux/pm.h>
-#include <linux/delay.h>
 
-static void mips_machine_restart(char *command);
-static void mips_machine_halt(void);
-static void mips_machine_power_off(void);
+#include <asm/mach-ralink/ralink_regs.h>
 
-static void mips_machine_restart(char *command)
+/* Reset Control */
+#define SYSC_REG_RESET_CTRL	0x034
+
+#define RSTCTL_RESET_PCI	BIT(26)
+#define RSTCTL_RESET_SYSTEM	BIT(0)
+
+static int ralink_assert_device(struct reset_controller_dev *rcdev,
+				unsigned long id)
 {
-	*(volatile unsigned int*)(SOFTRES_REG) = GORESET;
-	*(volatile unsigned int*)(SOFTRES_REG) = 0;
+	u32 val;
+
+	if (id < 8)
+		return -1;
+
+	val = rt_sysc_r32(SYSC_REG_RESET_CTRL);
+	val |= BIT(id);
+	rt_sysc_w32(val, SYSC_REG_RESET_CTRL);
+
+	return 0;
 }
 
-static void mips_machine_halt(void)
+static int ralink_deassert_device(struct reset_controller_dev *rcdev,
+				  unsigned long id)
 {
-	*(volatile unsigned int*)(SOFTRES_REG) = (0x1)<<26; // PCIERST
-	mdelay(10);
-	*(volatile unsigned int*)(SOFTRES_REG) = GORESET;
-	*(volatile unsigned int*)(SOFTRES_REG) = 0;
+	u32 val;
+
+	if (id < 8)
+		return -1;
+
+	val = rt_sysc_r32(SYSC_REG_RESET_CTRL);
+	val &= ~BIT(id);
+	rt_sysc_w32(val, SYSC_REG_RESET_CTRL);
+
+	return 0;
 }
 
-static void mips_machine_power_off(void)
+static int ralink_reset_device(struct reset_controller_dev *rcdev,
+			       unsigned long id)
 {
-	*(volatile unsigned int*)(POWER_DIR_REG) = POWER_DIR_OUTPUT;
-	*(volatile unsigned int*)(POWER_POL_REG) = 0;
-	*(volatile unsigned int*)(POWEROFF_REG) = POWEROFF;
+	ralink_assert_device(rcdev, id);
+	return ralink_deassert_device(rcdev, id);
 }
 
+static const struct reset_control_ops reset_ops = {
+	.reset = ralink_reset_device,
+	.assert = ralink_assert_device,
+	.deassert = ralink_deassert_device,
+};
 
-void mips_reboot_setup(void)
+static struct reset_controller_dev reset_dev = {
+	.ops			= &reset_ops,
+	.owner			= THIS_MODULE,
+	.nr_resets		= 32,
+	.of_reset_n_cells	= 1,
+};
+
+void ralink_rst_init(void)
 {
-	_machine_restart = mips_machine_restart;
-	_machine_halt = mips_machine_halt;
-	//_machine_power_off = mips_machine_power_off;
-	pm_power_off = mips_machine_power_off;
+	reset_dev.of_node = of_find_compatible_node(NULL, NULL,
+						"ralink,rt2880-reset");
+	if (!reset_dev.of_node)
+		pr_err("Failed to find reset controller node");
+	else
+		reset_controller_register(&reset_dev);
 }
+
+static void ralink_restart(char *command)
+{
+	if (IS_ENABLED(CONFIG_PCI)) {
+		rt_sysc_m32(0, RSTCTL_RESET_PCI, SYSC_REG_RESET_CTRL);
+		mdelay(50);
+	}
+
+	local_irq_disable();
+	rt_sysc_w32(RSTCTL_RESET_SYSTEM, SYSC_REG_RESET_CTRL);
+	unreachable();
+}
+
+static int __init mips_reboot_setup(void)
+{
+	_machine_restart = ralink_restart;
+
+	return 0;
+}
+
+arch_initcall(mips_reboot_setup);

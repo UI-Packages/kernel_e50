@@ -12,6 +12,8 @@
 
 #include <linux/const.h>
 
+#include <asm/mipsregs.h>
+
 /*
  * This gives the physical RAM offset.
  */
@@ -44,7 +46,7 @@
  * Memory above this physical address will be considered highmem.
  */
 #ifndef HIGHMEM_START
-#define HIGHMEM_START		_AC(0x20000000, UL)
+#define HIGHMEM_START		_AC(0x10000000, UL)
 #endif
 
 #endif /* CONFIG_32BIT */
@@ -52,11 +54,7 @@
 #ifdef CONFIG_64BIT
 
 #ifndef CAC_BASE
-#ifdef CONFIG_DMA_NONCOHERENT
-#define CAC_BASE		_AC(0x9800000000000000, UL)
-#else
-#define CAC_BASE		_AC(0xa800000000000000, UL)
-#endif
+#define CAC_BASE	PHYS_TO_XKPHYS(read_c0_config() & CONF_CM_CMASK, 0)
 #endif
 
 #ifndef IO_BASE
@@ -99,21 +97,6 @@
 #else
 #define FIXADDR_TOP		((unsigned long)(long)(int)0xfffe0000)
 #endif
-#endif
-
-#ifndef in_module
-/*
- * If the Instruction Pointer is in module space (0xc0000000), return true;
- * otherwise, it is in kernel space (0x80000000), return false.
- *
- * FIXME: This will not work when the kernel space and module space are the
- * same. If they are the same, we need to modify scripts/recordmcount.pl,
- * ftrace_make_nop/call() and the other related parts to ensure the
- * enabling/disabling of the calling site to _mcount is right for both kernel
- * and module.
- *
- */
-#define in_module(ip)   (((unsigned long)ip) & 0x40000000)
 #endif
 
 #endif /* __ASM_MACH_GENERIC_SPACES_H */

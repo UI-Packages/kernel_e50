@@ -1,7 +1,6 @@
 #ifndef __BMT_H__
 #define __BMT_H__
 
-#include <linux/module.h>
 #include "nand_def.h"
 
 #if defined(__PRELOADER_NAND__)
@@ -11,13 +10,14 @@
 #elif defined(__UBOOT_NAND__)
 
 #include <linux/mtd/nand.h>
-#include "mtk_nand.h"
+#include "mtk_nand2.h"
 
 #elif defined(__KERNEL_NAND__)
 
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/nand.h>
-#include "mtk_nand.h"
+#include <linux/mtd/rawnand.h>
+#include <linux/module.h>
+#include "mtk_nand2.h"
 
 #endif
 

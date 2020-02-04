@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /* IPv4-specific defines for netfilter. 
  * (C)1998 Rusty Russell -- This code is GPL.
  */
@@ -60,9 +61,6 @@ enum nf_ip_hook_priorities {
 	NF_IP_PRI_RAW = -300,
 	NF_IP_PRI_SELINUX_FIRST = -225,
 	NF_IP_PRI_CONNTRACK = -200,
-#ifdef CONFIG_NETFILTER_RALINK_SWQOS_SUPPORT
-	NF_IP_PRI_NAT_DST_RALINK_QOS = -170,
-#endif
 	NF_IP_PRI_MANGLE = -150,
 	NF_IP_PRI_NAT_DST = -100,
 	NF_IP_PRI_FILTER = 0,

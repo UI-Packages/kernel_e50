@@ -33,7 +33,7 @@ static struct nand_chip *nand_chip_bmt;
 #define BLOCK_SIZE_BMT          (1 << nand_chip_bmt->phys_erase_shift)
 #define PAGE_SIZE_BMT           (1 << nand_chip_bmt->page_shift)
 
-#define OFFSET(block)       ((block) * BLOCK_SIZE_BMT)  
+#define OFFSET(block)       ((block) * BLOCK_SIZE_BMT)
 #define PAGE_ADDR(block)    ((block) * BLOCK_SIZE_BMT / PAGE_SIZE_BMT)
 
 /*********************************************************************
@@ -57,11 +57,11 @@ static u8 oob_buf[MAX_OOB_SIZE];
 static bool pool_erased;
 
 /***************************************************************
-*                                                              
-* Interface adaptor for preloader/uboot/kernel                 
+*
+* Interface adaptor for preloader/uboot/kernel
 *    These interfaces operate on physical address, read/write
 *       physical data.
-*                                                              
+*
 ***************************************************************/
 int nand_read_page_bmt(u32 page, u8 * dat, u8 * oob)
 {
@@ -473,7 +473,7 @@ static bool write_bmt_to_flash(u8 * dat, u8 * oob)
             // bmt.bad_count++;
 
             bmt_block_index = 0;
-            return write_bmt_to_flash(dat, oob);    // recursive call 
+            return write_bmt_to_flash(dat, oob);    // recursive call
         }
     }
 
@@ -484,7 +484,7 @@ static bool write_bmt_to_flash(u8 * dat, u8 * oob)
         // bmt.bad_count++;
 
         bmt_block_index = 0;
-        return write_bmt_to_flash(dat, oob);    // recursive call 
+        return write_bmt_to_flash(dat, oob);    // recursive call
     }
 
     MSG(INIT, "Write BMT data to block 0x%x success\n", bmt_block_index);
@@ -492,9 +492,9 @@ static bool write_bmt_to_flash(u8 * dat, u8 * oob)
 }
 
 /*******************************************************************
-* Reconstruct bmt, called when found bmt info doesn't match bad 
+* Reconstruct bmt, called when found bmt info doesn't match bad
 * block info in flash.
-* 
+*
 * Return NULL for failure
 *******************************************************************/
 bmt_struct *reconstruct_bmt(bmt_struct * bmt)
@@ -504,7 +504,7 @@ bmt_struct *reconstruct_bmt(bmt_struct * bmt)
     unsigned short bad_index;
     int mapped;
 
-    // init everything in BMT struct 
+    // init everything in BMT struct
     bmt->version = BMT_VERSION;
     bmt->bad_count = 0;
     bmt->mapped_count = 0;
@@ -584,8 +584,8 @@ bmt_struct *reconstruct_bmt(bmt_struct * bmt)
 *
 * Parameter:
 *   size: size of bmt and replace pool
-* 
-* Return: 
+*
+* Return:
 *   NULL for failure, and a bmt struct for success
 *******************************************************************/
 bmt_struct *init_bmt(struct nand_chip * chip, int size)
@@ -606,7 +606,7 @@ bmt_struct *init_bmt(struct nand_chip * chip, int size)
     total_block_count = bmt_block_count + system_block_count;
     page_per_block = BLOCK_SIZE_BMT / PAGE_SIZE_BMT;
     host = (struct mtk_nand_host *)chip->priv;
-    mtd_bmt = &host->mtd;
+    mtd_bmt = host->mtd;
 
     MSG(INIT, "mtd_bmt: %p, nand_chip_bmt: %p\n", mtd_bmt, nand_chip_bmt);
     MSG(INIT, "bmt count: %d, system count: %d\n", bmt_block_count, system_block_count);
@@ -641,8 +641,8 @@ bmt_struct *init_bmt(struct nand_chip * chip, int size)
 *   offset: update block/page offset.
 *   reason: update reason, see update_reason_t for reason.
 *   dat/oob: data and oob buffer for write fail.
-* 
-* Return: 
+*
+* Return:
 *   Return true for success, and false for failure.
 *******************************************************************/
 bool update_bmt(u32 offset, update_reason_t reason, u8 * dat, u8 * oob)
@@ -709,11 +709,11 @@ bool update_bmt(u32 offset, update_reason_t reason, u8 * dat, u8 * oob)
 * [BMT Interface]
 *
 * Description:
-*   Given an block index, return mapped index if it's mapped, else 
+*   Given an block index, return mapped index if it's mapped, else
 *   return given index.
 *
 * Parameter:
-*   index: given an block index. This value cannot exceed 
+*   index: given an block index. This value cannot exceed
 *   system_block_count.
 *
 * Return NULL for failure

@@ -30,10 +30,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 
@@ -45,8 +41,7 @@
 #include <linux/delay.h>
 #include <linux/math64.h>
 #include <media/v4l2-common.h>
-#include <media/v4l2-chip-ident.h>
-#include <media/cx25840.h>
+#include <media/drv-intf/cx25840.h>
 
 #include "cx25840-core.h"
 
@@ -421,11 +416,13 @@ static void cx25840_initialize(struct i2c_client *client)
 	INIT_WORK(&state->fw_work, cx25840_work_handler);
 	init_waitqueue_head(&state->fw_wait);
 	q = create_singlethread_workqueue("cx25840_fw");
-	prepare_to_wait(&state->fw_wait, &wait, TASK_UNINTERRUPTIBLE);
-	queue_work(q, &state->fw_work);
-	schedule();
-	finish_wait(&state->fw_wait, &wait);
-	destroy_workqueue(q);
+	if (q) {
+		prepare_to_wait(&state->fw_wait, &wait, TASK_UNINTERRUPTIBLE);
+		queue_work(q, &state->fw_work);
+		schedule();
+		finish_wait(&state->fw_wait, &wait);
+		destroy_workqueue(q);
+	}
 
 	/* 6. */
 	cx25840_write(client, 0x115, 0x8c);
@@ -498,7 +495,7 @@ static void cx23885_initialize(struct i2c_client *client)
 
 	/* Sys PLL */
 	switch (state->id) {
-	case V4L2_IDENT_CX23888_AV:
+	case CX23888_AV:
 		/*
 		 * 50.0 MHz * (0xb + 0xe8ba26/0x2000000)/4 = 5 * 28.636363 MHz
 		 * 572.73 MHz before post divide
@@ -511,7 +508,7 @@ static void cx23885_initialize(struct i2c_client *client)
 		cx25840_write4(client, 0x42c, 0x42600000);
 		cx25840_write4(client, 0x44c, 0x161f1000);
 		break;
-	case V4L2_IDENT_CX23887_AV:
+	case CX23887_AV:
 		/*
 		 * 25.0 MHz * (0x16 + 0x1d1744c/0x2000000)/4 = 5 * 28.636363 MHz
 		 * 572.73 MHz before post divide
@@ -519,7 +516,7 @@ static void cx23885_initialize(struct i2c_client *client)
 		cx25840_write4(client, 0x11c, 0x01d1744c);
 		cx25840_write4(client, 0x118, 0x00000416);
 		break;
-	case V4L2_IDENT_CX23885_AV:
+	case CX23885_AV:
 	default:
 		/*
 		 * 28.636363 MHz * (0x14 + 0x0/0x2000000)/4 = 5 * 28.636363 MHz
@@ -546,7 +543,7 @@ static void cx23885_initialize(struct i2c_client *client)
 
 	/* HVR1850 */
 	switch (state->id) {
-	case V4L2_IDENT_CX23888_AV:
+	case CX23888_AV:
 		/* 888/HVR1250 specific */
 		cx25840_write4(client, 0x10c, 0x13333333);
 		cx25840_write4(client, 0x108, 0x00000515);
@@ -560,7 +557,10 @@ static void cx23885_initialize(struct i2c_client *client)
 	cx25840_write4(client, 0x414, 0x00107d12);
 
 	/* Chroma */
-	cx25840_write4(client, 0x420, 0x3d008282);
+	if (is_cx23888(state))
+		cx25840_write4(client, 0x418, 0x1d008282);
+	else
+		cx25840_write4(client, 0x420, 0x3d008282);
 
 	/*
 	 * Aux PLL
@@ -570,7 +570,7 @@ static void cx23885_initialize(struct i2c_client *client)
 	 * 48 ksps, 16 bits/sample, x16 multiplier = 12.288 MHz
 	 */
 	switch (state->id) {
-	case V4L2_IDENT_CX23888_AV:
+	case CX23888_AV:
 		/*
 		 * 50.0 MHz * (0x7 + 0x0bedfa4/0x2000000)/3 = 122.88 MHz
 		 * 368.64 MHz before post divide
@@ -580,7 +580,7 @@ static void cx23885_initialize(struct i2c_client *client)
 		cx25840_write4(client, 0x114, 0x017dbf48);
 		cx25840_write4(client, 0x110, 0x000a030e);
 		break;
-	case V4L2_IDENT_CX23887_AV:
+	case CX23887_AV:
 		/*
 		 * 25.0 MHz * (0xe + 0x17dbf48/0x2000000)/3 = 122.88 MHz
 		 * 368.64 MHz before post divide
@@ -589,7 +589,7 @@ static void cx23885_initialize(struct i2c_client *client)
 		cx25840_write4(client, 0x114, 0x017dbf48);
 		cx25840_write4(client, 0x110, 0x000a030e);
 		break;
-	case V4L2_IDENT_CX23885_AV:
+	case CX23885_AV:
 	default:
 		/*
 		 * 28.636363 MHz * (0xc + 0x1bf0c9e/0x2000000)/3 = 122.88 MHz
@@ -632,11 +632,13 @@ static void cx23885_initialize(struct i2c_client *client)
 	INIT_WORK(&state->fw_work, cx25840_work_handler);
 	init_waitqueue_head(&state->fw_wait);
 	q = create_singlethread_workqueue("cx25840_fw");
-	prepare_to_wait(&state->fw_wait, &wait, TASK_UNINTERRUPTIBLE);
-	queue_work(q, &state->fw_work);
-	schedule();
-	finish_wait(&state->fw_wait, &wait);
-	destroy_workqueue(q);
+	if (q) {
+		prepare_to_wait(&state->fw_wait, &wait, TASK_UNINTERRUPTIBLE);
+		queue_work(q, &state->fw_work);
+		schedule();
+		finish_wait(&state->fw_wait, &wait);
+		destroy_workqueue(q);
+	}
 
 	/* Call the cx23888 specific std setup func, we no longer rely on
 	 * the generic cx24840 func.
@@ -667,14 +669,17 @@ static void cx23885_initialize(struct i2c_client *client)
 	cx25840_write4(client, 0x404, 0x0010253e);
 
 	/* CC on  - Undocumented Register */
-	cx25840_write(client, 0x42f, 0x66);
+	cx25840_write(client, state->vbi_regs_offset + 0x42f, 0x66);
 
 	/* HVR-1250 / HVR1850 DIF related */
 	/* Power everything up */
 	cx25840_write4(client, 0x130, 0x0);
 
 	/* Undocumented */
-	cx25840_write4(client, 0x478, 0x6628021F);
+	if (is_cx23888(state))
+		cx25840_write4(client, 0x454, 0x6628021F);
+	else
+		cx25840_write4(client, 0x478, 0x6628021F);
 
 	/* AFE_CLK_OUT_CTRL - Select the clock output source as output */
 	cx25840_write4(client, 0x144, 0x5);
@@ -747,11 +752,13 @@ static void cx231xx_initialize(struct i2c_client *client)
 	INIT_WORK(&state->fw_work, cx25840_work_handler);
 	init_waitqueue_head(&state->fw_wait);
 	q = create_singlethread_workqueue("cx25840_fw");
-	prepare_to_wait(&state->fw_wait, &wait, TASK_UNINTERRUPTIBLE);
-	queue_work(q, &state->fw_work);
-	schedule();
-	finish_wait(&state->fw_wait, &wait);
-	destroy_workqueue(q);
+	if (q) {
+		prepare_to_wait(&state->fw_wait, &wait, TASK_UNINTERRUPTIBLE);
+		queue_work(q, &state->fw_work);
+		schedule();
+		finish_wait(&state->fw_wait, &wait);
+		destroy_workqueue(q);
+	}
 
 	cx25840_std_setup(client);
 
@@ -868,10 +875,7 @@ void cx25840_std_setup(struct i2c_client *client)
 					"Chroma sub-carrier freq = %d.%06d MHz\n",
 					fsc / 1000000, fsc % 1000000);
 
-			v4l_dbg(1, cx25840_debug, client, "hblank %i, hactive %i, "
-				"vblank %i, vactive %i, vblank656 %i, src_dec %i, "
-				"burst 0x%02x, luma_lpf %i, uv_lpf %i, comb 0x%02x, "
-				"sc 0x%06x\n",
+			v4l_dbg(1, cx25840_debug, client, "hblank %i, hactive %i, vblank %i, vactive %i, vblank656 %i, src_dec %i, burst 0x%02x, luma_lpf %i, uv_lpf %i, comb 0x%02x, sc 0x%06x\n",
 				hblank, hactive, vblank, vactive, vblank656,
 				src_decimation, burst, luma_lpf, uv_lpf, comb, sc);
 		}
@@ -880,7 +884,7 @@ void cx25840_std_setup(struct i2c_client *client)
 	/* Sets horizontal blanking delay and active lines */
 	cx25840_write(client, 0x470, hblank);
 	cx25840_write(client, 0x471,
-			0xff & (((hblank >> 8) & 0x3) | (hactive << 4)));
+		      (((hblank >> 8) & 0x3) | (hactive << 4)) & 0xff);
 	cx25840_write(client, 0x472, hactive >> 4);
 
 	/* Sets burst gate delay */
@@ -889,13 +893,13 @@ void cx25840_std_setup(struct i2c_client *client)
 	/* Sets vertical blanking delay and active duration */
 	cx25840_write(client, 0x474, vblank);
 	cx25840_write(client, 0x475,
-			0xff & (((vblank >> 8) & 0x3) | (vactive << 4)));
+		      (((vblank >> 8) & 0x3) | (vactive << 4)) & 0xff);
 	cx25840_write(client, 0x476, vactive >> 4);
 	cx25840_write(client, 0x477, vblank656);
 
 	/* Sets src decimation rate */
-	cx25840_write(client, 0x478, 0xff & src_decimation);
-	cx25840_write(client, 0x479, 0xff & (src_decimation >> 8));
+	cx25840_write(client, 0x478, src_decimation & 0xff);
+	cx25840_write(client, 0x479, (src_decimation >> 8) & 0xff);
 
 	/* Sets Luma and UV Low pass filters */
 	cx25840_write(client, 0x47a, luma_lpf << 6 | ((uv_lpf << 4) & 0x30));
@@ -905,8 +909,8 @@ void cx25840_std_setup(struct i2c_client *client)
 
 	/* Sets SC Step*/
 	cx25840_write(client, 0x47c, sc);
-	cx25840_write(client, 0x47d, 0xff & sc >> 8);
-	cx25840_write(client, 0x47e, 0xff & sc >> 16);
+	cx25840_write(client, 0x47d, (sc >> 8) & 0xff);
+	cx25840_write(client, 0x47e, (sc >> 16) & 0xff);
 
 	/* Sets VBI parameters */
 	if (std & V4L2_STD_625_50) {
@@ -972,7 +976,7 @@ static void input_change(struct i2c_client *client)
 		   not used by any public broadcast network, force
 		   6.5 MHz carrier to be interpreted as System DK,
 		   this avoids DK audio detection instability */
-	       cx25840_write(client, 0x80b, 0x00);
+		cx25840_write(client, 0x80b, 0x00);
 	} else if (std & V4L2_STD_SECAM) {
 		/* Autodetect audio standard and audio system */
 		cx25840_write(client, 0x808, 0xff);
@@ -1107,31 +1111,15 @@ static int set_input(struct i2c_client *client, enum cx25840_video_input vid_inp
 			cx25840_write4(client, 0x410, 0xffff0dbf);
 			cx25840_write4(client, 0x414, 0x00137d03);
 
-			/* on the 887, 0x418 is HSCALE_CTRL, on the 888 it is 
-			   CHROMA_CTRL */
-			if (is_cx23888(state))
-				cx25840_write4(client, 0x418, 0x01008080);
-			else
-				cx25840_write4(client, 0x418, 0x01000000);
+			cx25840_write4(client, state->vbi_regs_offset + 0x42c, 0x42600000);
+			cx25840_write4(client, state->vbi_regs_offset + 0x430, 0x0000039b);
+			cx25840_write4(client, state->vbi_regs_offset + 0x438, 0x00000000);
 
-			cx25840_write4(client, 0x41c, 0x00000000);
-
-			/* on the 887, 0x420 is CHROMA_CTRL, on the 888 it is 
-			   CRUSH_CTRL */
-			if (is_cx23888(state))
-				cx25840_write4(client, 0x420, 0x001c3e0f);
-			else
-				cx25840_write4(client, 0x420, 0x001c8282);
-
-			cx25840_write4(client, 0x42c, 0x42600000);
-			cx25840_write4(client, 0x430, 0x0000039b);
-			cx25840_write4(client, 0x438, 0x00000000);
-
-			cx25840_write4(client, 0x440, 0xF8E3E824);
-			cx25840_write4(client, 0x444, 0x401040dc);
-			cx25840_write4(client, 0x448, 0xcd3f02a0);
-			cx25840_write4(client, 0x44c, 0x161f1000);
-			cx25840_write4(client, 0x450, 0x00000802);
+			cx25840_write4(client, state->vbi_regs_offset + 0x440, 0xF8E3E824);
+			cx25840_write4(client, state->vbi_regs_offset + 0x444, 0x401040dc);
+			cx25840_write4(client, state->vbi_regs_offset + 0x448, 0xcd3f02a0);
+			cx25840_write4(client, state->vbi_regs_offset + 0x44c, 0x161f1000);
+			cx25840_write4(client, state->vbi_regs_offset + 0x450, 0x00000802);
 
 			cx25840_write4(client, 0x91c, 0x01000000);
 			cx25840_write4(client, 0x8e0, 0x03063870);
@@ -1367,14 +1355,17 @@ static int cx25840_s_ctrl(struct v4l2_ctrl *ctrl)
 
 /* ----------------------------------------------------------------------- */
 
-static int cx25840_s_mbus_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *fmt)
+static int cx25840_set_fmt(struct v4l2_subdev *sd,
+		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_format *format)
 {
+	struct v4l2_mbus_framefmt *fmt = &format->format;
 	struct cx25840_state *state = to_state(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int HSC, VSC, Vsrc, Hsrc, filter, Vlines;
 	int is_50Hz = !(state->std & V4L2_STD_525_60);
 
-	if (fmt->code != V4L2_MBUS_FMT_FIXED)
+	if (format->pad || fmt->code != MEDIA_BUS_FMT_FIXED)
 		return -EINVAL;
 
 	fmt->field = V4L2_FIELD_INTERLACED;
@@ -1398,12 +1389,20 @@ static int cx25840_s_mbus_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt 
 
 	Vlines = fmt->height + (is_50Hz ? 4 : 7);
 
+	/*
+	 * We keep 1 margin for the Vsrc < Vlines check since the
+	 * cx23888 reports a Vsrc of 486 instead of 487 for the NTSC
+	 * height. Without that margin the cx23885 fails in this
+	 * check.
+	 */
 	if ((fmt->width * 16 < Hsrc) || (Hsrc < fmt->width) ||
-			(Vlines * 8 < Vsrc) || (Vsrc < Vlines)) {
+			(Vlines * 8 < Vsrc) || (Vsrc + 1 < Vlines)) {
 		v4l_err(client, "%dx%d is not a valid size!\n",
 				fmt->width, fmt->height);
 		return -ERANGE;
 	}
+	if (format->which == V4L2_SUBDEV_FORMAT_TRY)
+		return 0;
 
 	HSC = (Hsrc * (1 << 20)) / fmt->width - (1 << 20);
 	VSC = (1 << 16) - (Vsrc * (1 << 9) / Vlines - (1 << 9));
@@ -1422,14 +1421,20 @@ static int cx25840_s_mbus_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt 
 			fmt->width, fmt->height, HSC, VSC);
 
 	/* HSCALE=HSC */
-	cx25840_write(client, 0x418, HSC & 0xff);
-	cx25840_write(client, 0x419, (HSC >> 8) & 0xff);
-	cx25840_write(client, 0x41a, HSC >> 16);
-	/* VSCALE=VSC */
-	cx25840_write(client, 0x41c, VSC & 0xff);
-	cx25840_write(client, 0x41d, VSC >> 8);
-	/* VS_INTRLACE=1 VFILT=filter */
-	cx25840_write(client, 0x41e, 0x8 | filter);
+	if (is_cx23888(state)) {
+		cx25840_write4(client, 0x434, HSC | (1 << 24));
+		/* VSCALE=VSC VS_INTRLACE=1 VFILT=filter */
+		cx25840_write4(client, 0x438, VSC | (1 << 19) | (filter << 16));
+	} else {
+		cx25840_write(client, 0x418, HSC & 0xff);
+		cx25840_write(client, 0x419, (HSC >> 8) & 0xff);
+		cx25840_write(client, 0x41a, HSC >> 16);
+		/* VSCALE=VSC */
+		cx25840_write(client, 0x41c, VSC & 0xff);
+		cx25840_write(client, 0x41d, VSC >> 8);
+		/* VS_INTRLACE=1 VFILT=filter */
+		cx25840_write(client, 0x41e, 0x8 | filter);
+	}
 	return 0;
 }
 
@@ -1662,10 +1667,6 @@ static int cx25840_g_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
-	if (!v4l2_chip_match_i2c_client(client, &reg->match))
-		return -EINVAL;
-	if (!capable(CAP_SYS_ADMIN))
-		return -EPERM;
 	reg->size = 1;
 	reg->val = cx25840_read(client, reg->reg & 0x0fff);
 	return 0;
@@ -1675,10 +1676,6 @@ static int cx25840_s_register(struct v4l2_subdev *sd, const struct v4l2_dbg_regi
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
-	if (!v4l2_chip_match_i2c_client(client, &reg->match))
-		return -EINVAL;
-	if (!capable(CAP_SYS_ADMIN))
-		return -EPERM;
 	cx25840_write(client, reg->reg & 0x0fff, reg->val & 0xff);
 	return 0;
 }
@@ -1718,26 +1715,27 @@ static int cx25840_s_stream(struct v4l2_subdev *sd, int enable)
 
 	v4l_dbg(1, cx25840_debug, client, "%s video output\n",
 			enable ? "enable" : "disable");
+
+	/*
+	 * It's not clear what should be done for these devices.
+	 * The original code used the same addresses as for the cx25840, but
+	 * those addresses do something else entirely on the cx2388x and
+	 * cx231xx. Since it never did anything in the first place, just do
+	 * nothing.
+	 */
+	if (is_cx2388x(state) || is_cx231xx(state))
+		return 0;
+
 	if (enable) {
-		if (is_cx2388x(state) || is_cx231xx(state)) {
-			v = cx25840_read(client, 0x421) | 0x0b;
-			cx25840_write(client, 0x421, v);
-		} else {
-			v = cx25840_read(client, 0x115) | 0x0c;
-			cx25840_write(client, 0x115, v);
-			v = cx25840_read(client, 0x116) | 0x04;
-			cx25840_write(client, 0x116, v);
-		}
+		v = cx25840_read(client, 0x115) | 0x0c;
+		cx25840_write(client, 0x115, v);
+		v = cx25840_read(client, 0x116) | 0x04;
+		cx25840_write(client, 0x116, v);
 	} else {
-		if (is_cx2388x(state) || is_cx231xx(state)) {
-			v = cx25840_read(client, 0x421) & ~(0x0b);
-			cx25840_write(client, 0x421, v);
-		} else {
-			v = cx25840_read(client, 0x115) & ~(0x0c);
-			cx25840_write(client, 0x115, v);
-			v = cx25840_read(client, 0x116) & ~(0x04);
-			cx25840_write(client, 0x116, v);
-		}
+		v = cx25840_read(client, 0x115) & ~(0x0c);
+		cx25840_write(client, 0x115, v);
+		v = cx25840_read(client, 0x116) & ~(0x04);
+		cx25840_write(client, 0x116, v);
 	}
 	return 0;
 }
@@ -1936,14 +1934,6 @@ static int cx25840_reset(struct v4l2_subdev *sd, u32 val)
 	else
 		cx25840_initialize(client);
 	return 0;
-}
-
-static int cx25840_g_chip_ident(struct v4l2_subdev *sd, struct v4l2_dbg_chip_ident *chip)
-{
-	struct cx25840_state *state = to_state(sd);
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
-
-	return v4l2_chip_ident_i2c_client(client, chip, state->id, state->rev);
 }
 
 static int cx25840_log_status(struct v4l2_subdev *sd)
@@ -4986,7 +4976,7 @@ static void cx23888_std_setup(struct i2c_client *client)
 	cx25840_write4(client, 0x4b4, 0x20524030);
 	cx25840_write4(client, 0x47c, 0x010a8263);
 
-	if (std & V4L2_STD_NTSC) {
+	if (std & V4L2_STD_525_60) {
 		v4l_dbg(1, cx25840_debug, client, "%s() Selecting NTSC",
 			__func__);
 
@@ -5051,16 +5041,6 @@ static const struct v4l2_ctrl_ops cx25840_ctrl_ops = {
 
 static const struct v4l2_subdev_core_ops cx25840_core_ops = {
 	.log_status = cx25840_log_status,
-	.g_chip_ident = cx25840_g_chip_ident,
-	.g_ctrl = v4l2_subdev_g_ctrl,
-	.s_ctrl = v4l2_subdev_s_ctrl,
-	.s_ext_ctrls = v4l2_subdev_s_ext_ctrls,
-	.try_ext_ctrls = v4l2_subdev_try_ext_ctrls,
-	.g_ext_ctrls = v4l2_subdev_g_ext_ctrls,
-	.queryctrl = v4l2_subdev_queryctrl,
-	.querymenu = v4l2_subdev_querymenu,
-	.s_std = cx25840_s_std,
-	.g_std = cx25840_g_std,
 	.reset = cx25840_reset,
 	.load_fw = cx25840_load_fw,
 	.s_io_pin_config = common_s_io_pin_config,
@@ -5085,8 +5065,9 @@ static const struct v4l2_subdev_audio_ops cx25840_audio_ops = {
 };
 
 static const struct v4l2_subdev_video_ops cx25840_video_ops = {
+	.s_std = cx25840_s_std,
+	.g_std = cx25840_g_std,
 	.s_routing = cx25840_s_video_routing,
-	.s_mbus_fmt = cx25840_s_mbus_fmt,
 	.s_stream = cx25840_s_stream,
 	.g_input_status = cx25840_g_input_status,
 };
@@ -5098,12 +5079,17 @@ static const struct v4l2_subdev_vbi_ops cx25840_vbi_ops = {
 	.g_sliced_fmt = cx25840_g_sliced_fmt,
 };
 
+static const struct v4l2_subdev_pad_ops cx25840_pad_ops = {
+	.set_fmt = cx25840_set_fmt,
+};
+
 static const struct v4l2_subdev_ops cx25840_ops = {
 	.core = &cx25840_core_ops,
 	.tuner = &cx25840_tuner_ops,
 	.audio = &cx25840_audio_ops,
 	.video = &cx25840_video_ops,
 	.vbi = &cx25840_vbi_ops,
+	.pad = &cx25840_pad_ops,
 	.ir = &cx25840_ir_ops,
 };
 
@@ -5128,18 +5114,18 @@ static u32 get_cx2388x_ident(struct i2c_client *client)
 		ret = cx25840_read4(client, 0x300);
 		if (((ret & 0xffff0000) >> 16) == (ret & 0xffff)) {
 			/* No DIF */
-			ret = V4L2_IDENT_CX23885_AV;
+			ret = CX23885_AV;
 		} else {
 			/* CX23887 has a broken DIF, but the registers
 			 * appear valid (but unused), good enough to detect. */
-			ret = V4L2_IDENT_CX23887_AV;
+			ret = CX23887_AV;
 		}
 	} else if (cx25840_read4(client, 0x300) & 0x0fffffff) {
 		/* DIF PLL Freq Word reg exists; chip must be a CX23888 */
-		ret = V4L2_IDENT_CX23888_AV;
+		ret = CX23888_AV;
 	} else {
 		v4l_err(client, "Unable to detect h/w, assuming cx23887\n");
-		ret = V4L2_IDENT_CX23887_AV;
+		ret = CX23887_AV;
 	}
 
 	/* Back into digital power down */
@@ -5153,8 +5139,11 @@ static int cx25840_probe(struct i2c_client *client,
 	struct cx25840_state *state;
 	struct v4l2_subdev *sd;
 	int default_volume;
-	u32 id = V4L2_IDENT_NONE;
+	u32 id;
 	u16 device_id;
+#if defined(CONFIG_MEDIA_CONTROLLER)
+	int ret;
+#endif
 
 	/* Check if the adapter supports the needed features */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
@@ -5169,55 +5158,80 @@ static int cx25840_probe(struct i2c_client *client,
 	/* The high byte of the device ID should be
 	 * 0x83 for the cx2583x and 0x84 for the cx2584x */
 	if ((device_id & 0xff00) == 0x8300) {
-		id = V4L2_IDENT_CX25836 + ((device_id >> 4) & 0xf) - 6;
+		id = CX25836 + ((device_id >> 4) & 0xf) - 6;
 	} else if ((device_id & 0xff00) == 0x8400) {
-		id = V4L2_IDENT_CX25840 + ((device_id >> 4) & 0xf);
+		id = CX25840 + ((device_id >> 4) & 0xf);
 	} else if (device_id == 0x0000) {
 		id = get_cx2388x_ident(client);
 	} else if ((device_id & 0xfff0) == 0x5A30) {
 		/* The CX23100 (0x5A3C = 23100) doesn't have an A/V decoder */
-		id = V4L2_IDENT_CX2310X_AV;
+		id = CX2310X_AV;
 	} else if ((device_id & 0xff) == (device_id >> 8)) {
 		v4l_err(client,
-			"likely a confused/unresponsive cx2388[578] A/V decoder"
-			" found @ 0x%x (%s)\n",
+			"likely a confused/unresponsive cx2388[578] A/V decoder found @ 0x%x (%s)\n",
 			client->addr << 1, client->adapter->name);
-		v4l_err(client, "A method to reset it from the cx25840 driver"
-			" software is not known at this time\n");
+		v4l_err(client, "A method to reset it from the cx25840 driver software is not known at this time\n");
 		return -ENODEV;
 	} else {
 		v4l_dbg(1, cx25840_debug, client, "cx25840 not found\n");
 		return -ENODEV;
 	}
 
-	state = kzalloc(sizeof(struct cx25840_state), GFP_KERNEL);
+	state = devm_kzalloc(&client->dev, sizeof(*state), GFP_KERNEL);
 	if (state == NULL)
 		return -ENOMEM;
 
 	sd = &state->sd;
 	v4l2_i2c_subdev_init(sd, client, &cx25840_ops);
+#if defined(CONFIG_MEDIA_CONTROLLER)
+	/*
+	 * TODO: add media controller support for analog video inputs like
+	 * composite, svideo, etc.
+	 * A real input pad for this analog demod would be like:
+	 *                 ___________
+	 * TUNER --------> |         |
+	 *		   |         |
+	 * SVIDEO .......> | cx25840 |
+	 *		   |         |
+	 * COMPOSITE1 ...> |_________|
+	 *
+	 * However, at least for now, there's no much gain on modelling
+	 * those extra inputs. So, let's add it only when needed.
+	 */
+	state->pads[CX25840_PAD_INPUT].flags = MEDIA_PAD_FL_SINK;
+	state->pads[CX25840_PAD_VID_OUT].flags = MEDIA_PAD_FL_SOURCE;
+	state->pads[CX25840_PAD_VBI_OUT].flags = MEDIA_PAD_FL_SOURCE;
+	sd->entity.function = MEDIA_ENT_F_ATV_DECODER;
+
+	ret = media_entity_pads_init(&sd->entity, ARRAY_SIZE(state->pads),
+				state->pads);
+	if (ret < 0) {
+		v4l_info(client, "failed to initialize media entity!\n");
+		return ret;
+	}
+#endif
 
 	switch (id) {
-	case V4L2_IDENT_CX23885_AV:
+	case CX23885_AV:
 		v4l_info(client, "cx23885 A/V decoder found @ 0x%x (%s)\n",
 			 client->addr << 1, client->adapter->name);
 		break;
-	case V4L2_IDENT_CX23887_AV:
+	case CX23887_AV:
 		v4l_info(client, "cx23887 A/V decoder found @ 0x%x (%s)\n",
 			 client->addr << 1, client->adapter->name);
 		break;
-	case V4L2_IDENT_CX23888_AV:
+	case CX23888_AV:
 		v4l_info(client, "cx23888 A/V decoder found @ 0x%x (%s)\n",
 			 client->addr << 1, client->adapter->name);
 		break;
-	case V4L2_IDENT_CX2310X_AV:
+	case CX2310X_AV:
 		v4l_info(client, "cx%d A/V decoder found @ 0x%x (%s)\n",
 			 device_id, client->addr << 1, client->adapter->name);
 		break;
-	case V4L2_IDENT_CX25840:
-	case V4L2_IDENT_CX25841:
-	case V4L2_IDENT_CX25842:
-	case V4L2_IDENT_CX25843:
+	case CX25840:
+	case CX25841:
+	case CX25842:
+	case CX25843:
 		/* Note: revision '(device_id & 0x0f) == 2' was never built. The
 		   marking skips from 0x1 == 22 to 0x3 == 23. */
 		v4l_info(client, "cx25%3x-2%x found @ 0x%x (%s)\n",
@@ -5226,8 +5240,8 @@ static int cx25840_probe(struct i2c_client *client,
 						: (device_id & 0x0f),
 			 client->addr << 1, client->adapter->name);
 		break;
-	case V4L2_IDENT_CX25836:
-	case V4L2_IDENT_CX25837:
+	case CX25836:
+	case CX25837:
 	default:
 		v4l_info(client, "cx25%3x-%x found @ 0x%x (%s)\n",
 			 (device_id & 0xfff0) >> 4, device_id & 0x0f,
@@ -5243,6 +5257,8 @@ static int cx25840_probe(struct i2c_client *client,
 	state->vbi_line_offset = 8;
 	state->id = id;
 	state->rev = device_id;
+	state->vbi_regs_offset = id == CX23888_AV ? 0x500 - 0x424 : 0;
+	state->std = V4L2_STD_NTSC_M;
 	v4l2_ctrl_handler_init(&state->hdl, 9);
 	v4l2_ctrl_new_std(&state->hdl, &cx25840_ctrl_ops,
 			V4L2_CID_BRIGHTNESS, 0, 255, 1, 128);
@@ -5292,7 +5308,6 @@ static int cx25840_probe(struct i2c_client *client,
 		int err = state->hdl.error;
 
 		v4l2_ctrl_handler_free(&state->hdl);
-		kfree(state);
 		return err;
 	}
 	if (!is_cx2583x(state))
@@ -5317,7 +5332,6 @@ static int cx25840_remove(struct i2c_client *client)
 	cx25840_ir_remove(sd);
 	v4l2_device_unregister_subdev(sd);
 	v4l2_ctrl_handler_free(&state->hdl);
-	kfree(state);
 	return 0;
 }
 
@@ -5329,7 +5343,6 @@ MODULE_DEVICE_TABLE(i2c, cx25840_id);
 
 static struct i2c_driver cx25840_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "cx25840",
 	},
 	.probe		= cx25840_probe,

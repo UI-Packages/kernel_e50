@@ -18,7 +18,6 @@
 #include <linux/spinlock.h>
 #include <linux/clockchips.h>
 #include <linux/clocksource.h>
-#include <asm/gic.h>
 
 extern spinlock_t rtc_lock;
 
@@ -47,22 +46,17 @@ extern unsigned int mips_hpt_frequency;
  * so it lives here.
  */
 extern int (*perf_irq)(void);
+extern int __weak get_c0_perfcount_int(void);
 
 /*
  * Initialize the calling CPU's compare interrupt as clockevent device
  */
-extern unsigned int __weak get_c0_compare_int(void);
+extern unsigned int get_c0_compare_int(void);
 extern int r4k_clockevent_init(void);
-extern int smtc_clockevent_init(void);
-extern int gic_clockevent_init(void);
 
 static inline int mips_clockevent_init(void)
 {
-#ifdef CONFIG_MIPS_MT_SMTC
-	return smtc_clockevent_init();
-#elif defined(CONFIG_CEVT_GIC)
-	return (gic_clockevent_init() | r4k_clockevent_init());
-#elif defined(CONFIG_CEVT_R4K)
+#ifdef CONFIG_CEVT_R4K
 	return r4k_clockevent_init();
 #else
 	return -ENXIO;
@@ -88,41 +82,5 @@ static inline void clockevent_set_clock(struct clock_event_device *cd,
 {
 	clockevents_calc_mult_shift(cd, clock, 4);
 }
-
-#ifdef CONFIG_MET
-static inline unsigned long long mips_cyc2ns(u64 cyc, u32 __mult, u32 __shift)
-{
-#ifdef CONFIG_32BIT
-	/*
-	 * To balance the overhead of 128bit-arithematic and the precision
-	 * lost, we choose a smaller shift to avoid the quick overflow as the
-	 * X86 & ARM does. please refer to arch/x86/kernel/tsc.c and
-	 * arch/arm/plat-orion/time.c
-	 */
-	return (cyc * __mult) >> __shift;
-#else /* CONFIG_64BIT */
-	/* 64-bit arithmatic can overflow, so use 128-bit */
-	u64 t1, t2, t3;
-	unsigned long long rv;
-	u64 mult, shift;
-	mult = __mult;
-	shift = __shift;
-
-	asm (
-		"dmultu\t%[cyc],%[mult]\n\t"
-		"nor\t%[t1],$0,%[shift]\n\t"
-		"mfhi\t%[t2]\n\t"
-		"mflo\t%[t3]\n\t"
-		"dsll\t%[t2],%[t2],1\n\t"
-		"dsrlv\t%[rv],%[t3],%[shift]\n\t"
-		"dsllv\t%[t1],%[t2],%[t1]\n\t"
-		"or\t%[rv],%[t1],%[rv]\n\t"
-		: [rv] "=&r" (rv), [t1] "=&r" (t1), [t2] "=&r" (t2), [t3] "=&r" (t3)
-		: [cyc] "r" (cyc), [mult] "r" (mult), [shift] "r" (shift)
-		: "hi", "lo");
-	return rv;
-#endif
-}
-#endif
 
 #endif /* _ASM_TIME_H */

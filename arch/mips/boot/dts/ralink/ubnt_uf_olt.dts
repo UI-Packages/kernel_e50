@@ -1,0 +1,230 @@
+#include "mt7621.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	compatible = "ubiquiti,ufiber-olt";
+	model = "Ubiquiti Ufiber OLT";
+
+	gpio-keys-polled {
+		compatible = "gpio-keys-polled";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		poll-interval = <20>;
+
+		reset {
+			label = "reset";
+			gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
+		};
+	};
+
+	leds: leds {};
+};
+
+&ethernet {
+	mtd-mac-address = <&factory 0x22>;
+};
+
+&nand {
+	status = "okay";
+
+	partition@0 {
+		reg = <0x0 0x0>;
+		read-only;
+	};
+	partition@1 {
+		reg = <0x0 0x0>;
+		read-only;
+	};
+	partition@2 {
+		label = "u-boot";
+		reg = <0x0 0x80000>;
+		read-only;
+	};
+
+	partition@80000 {
+		label = "u-boot-env";
+		reg = <0x80000 0x60000>;
+		read-only;
+	};
+
+	factory: partition@e0000 {
+		label = "eeprom";
+		reg = <0xe0000 0x60000>;
+	};
+
+	partition@140000 {
+		label = "kernel1";
+		reg = <0x140000 0x300000>;
+	};
+
+	partition@440000 {
+		label = "kernel2";
+		reg = <0x440000 0x300000>;
+	};
+
+	partition@740000 {
+		label = "ubi";
+		reg = <0x740000 0x1f4c0000>;
+	};
+};
+
+&pinctrl {
+	state_default: pinctrl0 {
+		gpio {
+			ralink,group = "uart2", "uart3", "rgmii2", "jtag";
+			ralink,function = "gpio";
+		};
+	};
+};
+
+&pcie {
+	status = "okay";
+};
+
+&spi0 {
+	/* This board has 2Mb spi flash soldered in and visible
+	   from manufacturer's firmware.
+	   But this SoC shares spi and nand pins,
+	   and current driver does't handle this sharing well */
+	status = "okay";
+
+	spi_nor: m25p80@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "jedec,spi-nor";
+		reg = <1>;
+		spi-max-frequency = <10000000>;
+		m25p,fast-read = <32>;
+
+		partition@0 {
+			label = "spi";
+			reg = <0x0 0x200000>;
+			read-only;
+		};
+	};
+};
+
+&xhci {
+	status = "disabled";
+};
+
+&i2c {
+	status = "okay";
+	gpio_i2c_21: pca9555@21 {
+		compatible = "nxp,pca9555";
+		reg = <0x21>;
+		status = "okay";
+		#gpio-cells = <2>;
+	};
+	gpio_i2c_24: pca9555@24 {
+		compatible = "nxp,pca9555";
+		reg = <0x24>;
+		status = "okay";
+		#gpio-cells = <2>;
+	};
+	gpio_i2c_25: pca9555@25 {
+		compatible = "nxp,pca9555";
+		reg = <0x25>;
+		status = "okay";
+		#gpio-cells = <2>;
+	};
+	i2c_switch1: i2c-switch@71 {
+		compatible = "nxp,pca9548";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x71>;
+		i2c-mux-idle-disconnect;
+		i2c71@0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0>;
+		};
+		i2c71@1 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <1>;
+		};
+		i2c71@2 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <2>;
+		};
+		i2c71@3 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <3>;
+		};
+		i2c71@4 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <4>;
+		};
+		i2c71@5 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <5>;
+		};
+		i2c71@6 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <6>;
+		};
+		i2c71@7 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <7>;
+		};
+	};
+	i2c_switch2: i2c-switch@72 {
+		compatible = "nxp,pca9548";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x72>;
+		i2c-mux-idle-disconnect;
+		i2c@0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0>;
+		};
+		i2c@1 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <1>;
+		};
+		i2c@2 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <2>;
+			isl28022@2 {
+				compatible = "renesas,isl28022";
+				reg = <0x40>;
+			};
+		};
+		i2c@3 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <3>;
+			adt7475@2e {
+				compatible = "adi,adt7475";
+				reg = <0x2e>;
+			};
+		};
+	};
+
+
+};
+
+&leds {
+        compatible = "gpio-leds";
+        pwr_blue {
+                gpios = <&gpio_i2c_25 10 GPIO_ACTIVE_HIGH>;
+                default-state = "on";
+        };
+        pwr_white {
+                gpios = <&gpio_i2c_25 11 GPIO_ACTIVE_HIGH>;
+                default-state = "off";
+        };
+};

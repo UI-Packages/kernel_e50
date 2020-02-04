@@ -41,7 +41,7 @@ struct m88rs2000_state {
 	u8 no_lock_count;
 	u32 tuner_frequency;
 	u32 symbol_rate;
-	fe_code_rate_t fec_inner;
+	enum fe_code_rate fec_inner;
 	u8 tuner_level;
 	int errmode;
 };
@@ -75,8 +75,8 @@ static int m88rs2000_writereg(struct m88rs2000_state *state,
 	ret = i2c_transfer(state->i2c, &msg, 1);
 
 	if (ret != 1)
-		deb_info("%s: writereg error (reg == 0x%02x, val == 0x%02x, "
-			"ret == %i)\n", __func__, reg, data, ret);
+		deb_info("%s: writereg error (reg == 0x%02x, val == 0x%02x, ret == %i)\n",
+			 __func__, reg, data, ret);
 
 	return (ret != 1) ? -EREMOTEIO : 0;
 }
@@ -247,7 +247,7 @@ static int m88rs2000_send_diseqc_msg(struct dvb_frontend *fe,
 }
 
 static int m88rs2000_send_diseqc_burst(struct dvb_frontend *fe,
-						fe_sec_mini_cmd_t burst)
+				       enum fe_sec_mini_cmd burst)
 {
 	struct m88rs2000_state *state = fe->demodulator_priv;
 	u8 reg0, reg1;
@@ -264,7 +264,8 @@ static int m88rs2000_send_diseqc_burst(struct dvb_frontend *fe,
 	return 0;
 }
 
-static int m88rs2000_set_tone(struct dvb_frontend *fe, fe_sec_tone_mode_t tone)
+static int m88rs2000_set_tone(struct dvb_frontend *fe,
+			      enum fe_sec_tone_mode tone)
 {
 	struct m88rs2000_state *state = fe->demodulator_priv;
 	u8 reg0, reg1;
@@ -297,7 +298,7 @@ struct inittab {
 	u8 val;
 };
 
-struct inittab m88rs2000_setup[] = {
+static struct inittab m88rs2000_setup[] = {
 	{DEMOD_WRITE, 0x9a, 0x30},
 	{DEMOD_WRITE, 0x00, 0x01},
 	{WRITE_DELAY, 0x19, 0x00},
@@ -315,7 +316,7 @@ struct inittab m88rs2000_setup[] = {
 	{0xff, 0xaa, 0xff}
 };
 
-struct inittab m88rs2000_shutdown[] = {
+static struct inittab m88rs2000_shutdown[] = {
 	{DEMOD_WRITE, 0x9a, 0x30},
 	{DEMOD_WRITE, 0xb0, 0x00},
 	{DEMOD_WRITE, 0xf1, 0x89},
@@ -325,7 +326,7 @@ struct inittab m88rs2000_shutdown[] = {
 	{0xff, 0xaa, 0xff}
 };
 
-struct inittab fe_reset[] = {
+static struct inittab fe_reset[] = {
 	{DEMOD_WRITE, 0x00, 0x01},
 	{DEMOD_WRITE, 0x20, 0x81},
 	{DEMOD_WRITE, 0x21, 0x80},
@@ -363,7 +364,7 @@ struct inittab fe_reset[] = {
 	{0xff, 0xaa, 0xff}
 };
 
-struct inittab fe_trigger[] = {
+static struct inittab fe_trigger[] = {
 	{DEMOD_WRITE, 0x97, 0x04},
 	{DEMOD_WRITE, 0x99, 0x77},
 	{DEMOD_WRITE, 0x9b, 0x64},
@@ -412,7 +413,8 @@ static int m88rs2000_tab_set(struct m88rs2000_state *state,
 	return 0;
 }
 
-static int m88rs2000_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t volt)
+static int m88rs2000_set_voltage(struct dvb_frontend *fe,
+				 enum fe_sec_voltage volt)
 {
 	struct m88rs2000_state *state = fe->demodulator_priv;
 	u8 data;
@@ -462,14 +464,15 @@ static int m88rs2000_sleep(struct dvb_frontend *fe)
 	return ret;
 }
 
-static int m88rs2000_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int m88rs2000_read_status(struct dvb_frontend *fe,
+				 enum fe_status *status)
 {
 	struct m88rs2000_state *state = fe->demodulator_priv;
 	u8 reg = m88rs2000_readreg(state, 0x8c);
 
 	*status = 0;
 
-	if ((reg & 0x7) == 0x7) {
+	if ((reg & 0xee) == 0xee) {
 		*status = FE_HAS_CARRIER | FE_HAS_SIGNAL | FE_HAS_VITERBI
 			| FE_HAS_SYNC | FE_HAS_LOCK;
 		if (state->config->set_ts_params)
@@ -539,55 +542,62 @@ static int m88rs2000_read_ucblocks(struct dvb_frontend *fe, u32 *ucblocks)
 }
 
 static int m88rs2000_set_fec(struct m88rs2000_state *state,
-		fe_code_rate_t fec)
+			     enum fe_code_rate fec)
 {
-	u16 fec_set;
+	u8 fec_set, reg;
+	int ret;
+
 	switch (fec) {
-	/* This is not confirmed kept for reference */
-/*	case FEC_1_2:
-		fec_set = 0x88;
+	case FEC_1_2:
+		fec_set = 0x8;
 		break;
 	case FEC_2_3:
-		fec_set = 0x68;
+		fec_set = 0x10;
 		break;
 	case FEC_3_4:
-		fec_set = 0x48;
+		fec_set = 0x20;
 		break;
 	case FEC_5_6:
-		fec_set = 0x28;
+		fec_set = 0x40;
 		break;
 	case FEC_7_8:
-		fec_set = 0x18;
-		break; */
+		fec_set = 0x80;
+		break;
 	case FEC_AUTO:
 	default:
-		fec_set = 0x08;
+		fec_set = 0x0;
 	}
-	m88rs2000_writereg(state, 0x76, fec_set);
 
-	return 0;
+	reg = m88rs2000_readreg(state, 0x70);
+	reg &= 0x7;
+	ret = m88rs2000_writereg(state, 0x70, reg | fec_set);
+
+	ret |= m88rs2000_writereg(state, 0x76, 0x8);
+
+	return ret;
 }
 
-
-static fe_code_rate_t m88rs2000_get_fec(struct m88rs2000_state *state)
+static enum fe_code_rate m88rs2000_get_fec(struct m88rs2000_state *state)
 {
 	u8 reg;
 	m88rs2000_writereg(state, 0x9a, 0x30);
 	reg = m88rs2000_readreg(state, 0x76);
 	m88rs2000_writereg(state, 0x9a, 0xb0);
 
+	reg &= 0xf0;
+	reg >>= 5;
+
 	switch (reg) {
-	case 0x88:
+	case 0x4:
 		return FEC_1_2;
-	case 0x68:
+	case 0x3:
 		return FEC_2_3;
-	case 0x48:
+	case 0x2:
 		return FEC_3_4;
-	case 0x28:
+	case 0x1:
 		return FEC_5_6;
-	case 0x18:
+	case 0x0:
 		return FEC_7_8;
-	case 0x08:
 	default:
 		break;
 	}
@@ -599,7 +609,7 @@ static int m88rs2000_set_frontend(struct dvb_frontend *fe)
 {
 	struct m88rs2000_state *state = fe->demodulator_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
-	fe_status_t status;
+	enum fe_status status = 0;
 	int i, ret = 0;
 	u32 tuner_freq;
 	s16 offset = 0;
@@ -608,10 +618,9 @@ static int m88rs2000_set_frontend(struct dvb_frontend *fe)
 	state->no_lock_count = 0;
 
 	if (c->delivery_system != SYS_DVBS) {
-			deb_info("%s: unsupported delivery "
-				"system selected (%d)\n",
-				__func__, c->delivery_system);
-			return -EOPNOTSUPP;
+		deb_info("%s: unsupported delivery system selected (%d)\n",
+			 __func__, c->delivery_system);
+		return -EOPNOTSUPP;
 	}
 
 	/* Set Tuner */
@@ -650,12 +659,8 @@ static int m88rs2000_set_frontend(struct dvb_frontend *fe)
 	if (ret < 0)
 		return -ENODEV;
 
-	/* Unknown */
-	reg = m88rs2000_readreg(state, 0x70);
-	ret = m88rs2000_writereg(state, 0x70, reg);
-
 	/* Set FEC */
-	ret |= m88rs2000_set_fec(state, c->fec_inner);
+	ret = m88rs2000_set_fec(state, c->fec_inner);
 	ret |= m88rs2000_writereg(state, 0x85, 0x1);
 	ret |= m88rs2000_writereg(state, 0x8a, 0xbf);
 	ret |= m88rs2000_writereg(state, 0x8d, 0x1e);
@@ -677,7 +682,7 @@ static int m88rs2000_set_frontend(struct dvb_frontend *fe)
 
 	for (i = 0; i < 25; i++) {
 		reg = m88rs2000_readreg(state, 0x8c);
-		if ((reg & 0x7) == 0x7) {
+		if ((reg & 0xee) == 0xee) {
 			status = FE_HAS_LOCK;
 			break;
 		}
@@ -702,10 +707,11 @@ static int m88rs2000_set_frontend(struct dvb_frontend *fe)
 	return 0;
 }
 
-static int m88rs2000_get_frontend(struct dvb_frontend *fe)
+static int m88rs2000_get_frontend(struct dvb_frontend *fe,
+				  struct dtv_frontend_properties *c)
 {
-	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 	struct m88rs2000_state *state = fe->demodulator_priv;
+
 	c->fec_inner = state->fec_inner;
 	c->frequency = state->tuner_frequency;
 	c->symbol_rate = state->symbol_rate;
@@ -746,7 +752,7 @@ static void m88rs2000_release(struct dvb_frontend *fe)
 	kfree(state);
 }
 
-static struct dvb_frontend_ops m88rs2000_ops = {
+static const struct dvb_frontend_ops m88rs2000_ops = {
 	.delsys = { SYS_DVBS },
 	.info = {
 		.name			= "M88RS2000 DVB-S",

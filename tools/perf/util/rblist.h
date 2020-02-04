@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PERF_RBLIST_H
 #define __PERF_RBLIST_H
 
@@ -32,6 +33,7 @@ void rblist__delete(struct rblist *rblist);
 int rblist__add_node(struct rblist *rblist, const void *new_entry);
 void rblist__remove_node(struct rblist *rblist, struct rb_node *rb_node);
 struct rb_node *rblist__find(struct rblist *rblist, const void *entry);
+struct rb_node *rblist__findnew(struct rblist *rblist, const void *entry);
 struct rb_node *rblist__entry(const struct rblist *rblist, unsigned int idx);
 
 static inline bool rblist__empty(const struct rblist *rblist)

@@ -10,6 +10,7 @@
  * for more details.
  */
 #include <linux/sched.h>
+#include <linux/sched/debug.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/errno.h>
@@ -25,7 +26,7 @@
 #include <linux/sysctl.h>
 #include <linux/module.h>
 #include <linux/perf_event.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/io.h>
 #include <asm/alignment.h>
 #include <asm/processor.h>
@@ -101,7 +102,7 @@ static int generate_and_check_address(struct pt_regs *regs,
 	if (displacement_not_indexed) {
 		__s64 displacement;
 		displacement = (opcode >> 10) & 0x3ff;
-		displacement = ((displacement << 54) >> 54); /* sign extend */
+		displacement = sign_extend64(displacement, 9);
 		addr = (__u64)((__s64)base_address + (displacement << width_shift));
 	} else {
 		__u64 offset;
@@ -810,7 +811,7 @@ asmlinkage void do_debug_interrupt(unsigned long code, struct pt_regs *regs)
 	poke_real_address_q(DM_EXP_CAUSE_PHY, 0x0);
 }
 
-void __cpuinit per_cpu_trap_init(void)
+void per_cpu_trap_init(void)
 {
 	/* Nothing to do for now, VBR initialization later. */
 }

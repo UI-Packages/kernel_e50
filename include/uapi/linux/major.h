@@ -1,9 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _LINUX_MAJOR_H
 #define _LINUX_MAJOR_H
 
 /*
  * This file has definitions for major device numbers.
- * For the device number assignments, see Documentation/devices.txt.
+ * For the device number assignments, see Documentation/admin-guide/devices.rst.
  */
 
 #define UNNAMED_MAJOR		0
@@ -54,6 +55,7 @@
 #define ACSI_MAJOR		28
 #define AZTECH_CDROM_MAJOR	29
 #define FB_MAJOR		29   /* /dev/fb* framebuffers */
+#define MTD_BLOCK_MAJOR		31
 #define CM206_CDROM_MAJOR	32
 #define IDE2_MAJOR		33
 #define IDE3_MAJOR		34
@@ -105,6 +107,7 @@
 #define IDE6_MAJOR		88
 #define IDE7_MAJOR		89
 #define IDE8_MAJOR		90
+#define MTD_CHAR_MAJOR		90
 #define IDE9_MAJOR		91
 
 #define DASD_MAJOR		94

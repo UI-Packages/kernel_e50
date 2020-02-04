@@ -23,6 +23,9 @@ int pinctrl_bind_pins(struct device *dev)
 {
 	int ret;
 
+	if (dev->of_node_reused)
+		return 0;
+
 	dev->pins = devm_kzalloc(dev, sizeof(*(dev->pins)), GFP_KERNEL);
 	if (!dev->pins)
 		return -ENOMEM;
@@ -42,11 +45,41 @@ int pinctrl_bind_pins(struct device *dev)
 		goto cleanup_get;
 	}
 
-	ret = pinctrl_select_state(dev->pins->p, dev->pins->default_state);
+	dev->pins->init_state = pinctrl_lookup_state(dev->pins->p,
+					PINCTRL_STATE_INIT);
+	if (IS_ERR(dev->pins->init_state)) {
+		/* Not supplying this state is perfectly legal */
+		dev_dbg(dev, "no init pinctrl state\n");
+
+		ret = pinctrl_select_state(dev->pins->p,
+					   dev->pins->default_state);
+	} else {
+		ret = pinctrl_select_state(dev->pins->p, dev->pins->init_state);
+	}
+
 	if (ret) {
-		dev_dbg(dev, "failed to activate default pinctrl state\n");
+		dev_dbg(dev, "failed to activate initial pinctrl state\n");
 		goto cleanup_get;
 	}
+
+#ifdef CONFIG_PM
+	/*
+	 * If power management is enabled, we also look for the optional
+	 * sleep and idle pin states, with semantics as defined in
+	 * <linux/pinctrl/pinctrl-state.h>
+	 */
+	dev->pins->sleep_state = pinctrl_lookup_state(dev->pins->p,
+					PINCTRL_STATE_SLEEP);
+	if (IS_ERR(dev->pins->sleep_state))
+		/* Not supplying this state is perfectly legal */
+		dev_dbg(dev, "no sleep pinctrl state\n");
+
+	dev->pins->idle_state = pinctrl_lookup_state(dev->pins->p,
+					PINCTRL_STATE_IDLE);
+	if (IS_ERR(dev->pins->idle_state))
+		/* Not supplying this state is perfectly legal */
+		dev_dbg(dev, "no idle pinctrl state\n");
+#endif
 
 	return 0;
 
@@ -61,9 +94,13 @@ cleanup_alloc:
 	devm_kfree(dev, dev->pins);
 	dev->pins = NULL;
 
-	/* Only return deferrals */
-	if (ret != -EPROBE_DEFER)
-		ret = 0;
+	/* Return deferrals */
+	if (ret == -EPROBE_DEFER)
+		return ret;
+	/* Return serious errors */
+	if (ret == -EINVAL)
+		return ret;
+	/* We ignore errors like -ENOENT meaning no pinctrl state */
 
-	return ret;
+	return 0;
 }

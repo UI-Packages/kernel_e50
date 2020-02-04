@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * linux/include/asm-m68k/io.h
  *
@@ -19,6 +20,8 @@
 #define _IO_H
 
 #ifdef __KERNEL__
+
+#define ARCH_HAS_IOREMAP_WT
 
 #include <linux/compiler.h>
 #include <asm/raw_io.h>
@@ -411,7 +414,8 @@ static inline void isa_delay(void)
 #define writew(val, addr)	out_le16((addr), (val))
 #endif /* CONFIG_ATARI_ROM_ISA */
 
-#if !defined(CONFIG_ISA) && !defined(CONFIG_ATARI_ROM_ISA)
+#if !defined(CONFIG_ISA) && !defined(CONFIG_ATARI_ROM_ISA) && \
+    !(defined(CONFIG_PCI) && defined(CONFIG_COLDFIRE))
 /*
  * We need to define dummy functions for GENERIC_IOMAP support.
  */
@@ -465,7 +469,8 @@ static inline void __iomem *ioremap_nocache(unsigned long physaddr, unsigned lon
 {
 	return __ioremap(physaddr, size, IOMAP_NOCACHE_SER);
 }
-static inline void __iomem *ioremap_writethrough(unsigned long physaddr,
+#define ioremap_uc ioremap_nocache
+static inline void __iomem *ioremap_wt(unsigned long physaddr,
 					 unsigned long size)
 {
 	return __ioremap(physaddr, size, IOMAP_WRITETHROUGH);
@@ -510,6 +515,13 @@ static inline void memcpy_toio(volatile void __iomem *dst, const void *src, int 
  */
 #define xlate_dev_kmem_ptr(p)	p
 
-#define ioport_map(port, nr)	((void __iomem *)(port))
+static inline void __iomem *ioport_map(unsigned long port, unsigned int nr)
+{
+	return (void __iomem *) port;
+}
+
+static inline void ioport_unmap(void __iomem *p)
+{
+}
 
 #endif /* _IO_H */

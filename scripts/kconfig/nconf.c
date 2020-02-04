@@ -5,7 +5,9 @@
  * Derived from menuconfig.
  *
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <string.h>
 #include <stdlib.h>
 
@@ -45,8 +47,8 @@ static const char nconf_global_help[] = N_(
 "<n> to remove it.  You may press the <Space> key to cycle through the\n"
 "available options.\n"
 "\n"
-"A trailing \"--->\" designates a submenu.\n"
-"\n"
+"A trailing \"--->\" designates a submenu, a trailing \"----\" an\n"
+"empty submenu.\n"
 "\n"
 "Menu navigation keys\n"
 "----------------------------------------------------------------------\n"
@@ -131,7 +133,7 @@ static const char nconf_global_help[] = N_(
 "\n"),
 menu_no_f_instructions[] = N_(
 "Legend:  [*] built-in  [ ] excluded  <M> module  < > module capable.\n"
-"Submenus are designated by a trailing \"--->\".\n"
+"Submenus are designated by a trailing \"--->\", empty ones by \"----\".\n"
 "\n"
 "Use the following keys to navigate the menus:\n"
 "Move up or down with <Up> and <Down>.\n"
@@ -148,7 +150,7 @@ menu_no_f_instructions[] = N_(
 "For help related to the current menu entry press <?> or <h>.\n"),
 menu_instructions[] = N_(
 "Legend:  [*] built-in  [ ] excluded  <M> module  < > module capable.\n"
-"Submenus are designated by a trailing \"--->\".\n"
+"Submenus are designated by a trailing \"--->\", empty ones by \"----\".\n"
 "\n"
 "Use the following keys to navigate the menus:\n"
 "Move up or down with <Up> or <Down>.\n"
@@ -269,7 +271,7 @@ static struct mitem k_menu_items[MAX_MENU_ITEMS];
 static int items_num;
 static int global_exit;
 /* the currently selected button */
-const char *current_instructions = menu_instructions;
+static const char *current_instructions = menu_instructions;
 
 static char *dialog_input_result;
 static int dialog_input_result_len;
@@ -303,7 +305,7 @@ struct function_keys {
 };
 
 static const int function_keys_num = 9;
-struct function_keys function_keys[] = {
+static struct function_keys function_keys[] = {
 	{
 		.key_str = "F1",
 		.func = "Help",
@@ -365,15 +367,16 @@ static void print_function_line(void)
 	int i;
 	int offset = 1;
 	const int skip = 1;
+	int lines = getmaxy(stdscr);
 
 	for (i = 0; i < function_keys_num; i++) {
 		(void) wattrset(main_window, attributes[FUNCTION_HIGHLIGHT]);
-		mvwprintw(main_window, LINES-3, offset,
+		mvwprintw(main_window, lines-3, offset,
 				"%s",
 				function_keys[i].key_str);
 		(void) wattrset(main_window, attributes[FUNCTION_TEXT]);
 		offset += strlen(function_keys[i].key_str);
-		mvwprintw(main_window, LINES-3,
+		mvwprintw(main_window, lines-3,
 				offset, "%s",
 				function_keys[i].func);
 		offset += strlen(function_keys[i].func) + skip;
@@ -505,7 +508,7 @@ static int get_mext_match(const char *match_str, match_f flag)
 	index = (index + items_num) % items_num;
 	while (true) {
 		char *str = k_menu_items[index].str;
-		if (strcasestr(str, match_str) != 0)
+		if (strcasestr(str, match_str) != NULL)
 			return index;
 		if (flag == FIND_NEXT_MATCH_UP ||
 		    flag == MATCH_TINKER_PATTERN_UP)
@@ -694,8 +697,8 @@ static void search_conf(void)
 	int dres;
 
 	title = str_new();
-	str_printf( &title, _("Enter %s (sub)string to search for "
-			      "(with or without \"%s\")"), CONFIG_, CONFIG_);
+	str_printf( &title, _("Enter (sub)string or regexp to search for "
+			      "(with or without \"%s\")"), CONFIG_);
 
 again:
 	dres = dialog_inputbox(main_window,
@@ -759,9 +762,9 @@ static void build_conf(struct menu *menu)
 						indent + 1, ' ', prompt);
 				} else
 					item_make(menu, 'm',
-						"   %*c%s  --->",
-						indent + 1,
-						' ', prompt);
+						  "   %*c%s  %s",
+						  indent + 1, ' ', prompt,
+						  menu_is_empty(menu) ? "----" : "--->");
 
 				if (single_menu_mode && menu->data)
 					goto conf_childs;
@@ -903,7 +906,7 @@ static void build_conf(struct menu *menu)
 				(sym_has_value(sym) || !sym_is_changable(sym)) ?
 				"" : _(" (NEW)"));
 		if (menu->prompt && menu->prompt->type == P_MENU) {
-			item_add_str("  --->");
+			item_add_str("  %s", menu_is_empty(menu) ? "----" : "--->");
 			return;
 		}
 	}
@@ -954,7 +957,7 @@ static void show_menu(const char *prompt, const char *instructions,
 
 	clear();
 	(void) wattrset(main_window, attributes[NORMAL]);
-	print_in_middle(stdscr, 1, 0, COLS,
+	print_in_middle(stdscr, 1, 0, getmaxx(stdscr),
 			menu_backtitle,
 			attributes[MAIN_HEADING]);
 
@@ -1064,7 +1067,7 @@ static int do_match(int key, struct match_state *state, int *ans)
 
 static void conf(struct menu *menu)
 {
-	struct menu *submenu = 0;
+	struct menu *submenu = NULL;
 	const char *prompt = menu_get_prompt(menu);
 	struct symbol *sym;
 	int res;
@@ -1231,7 +1234,7 @@ static void show_help(struct menu *menu)
 static void conf_choice(struct menu *menu)
 {
 	const char *prompt = _(menu_get_prompt(menu));
-	struct menu *child = 0;
+	struct menu *child = NULL;
 	struct symbol *active;
 	int selected_index = 0;
 	int last_top_row = 0;
@@ -1453,16 +1456,20 @@ static void conf_save(void)
 	}
 }
 
-void setup_windows(void)
+static void setup_windows(void)
 {
+	int lines, columns;
+
+	getmaxyx(stdscr, lines, columns);
+
 	if (main_window != NULL)
 		delwin(main_window);
 
 	/* set up the menu and menu window */
-	main_window = newwin(LINES-2, COLS-2, 2, 1);
+	main_window = newwin(lines-2, columns-2, 2, 1);
 	keypad(main_window, TRUE);
-	mwin_max_lines = LINES-7;
-	mwin_max_cols = COLS-6;
+	mwin_max_lines = lines-7;
+	mwin_max_cols = columns-6;
 
 	/* panels order is from bottom to top */
 	new_panel(main_window);
@@ -1470,12 +1477,18 @@ void setup_windows(void)
 
 int main(int ac, char **av)
 {
+	int lines, columns;
 	char *mode;
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 
+	if (ac > 1 && strcmp(av[1], "-s") == 0) {
+		/* Silence conf_read() until the real callback is set up */
+		conf_set_message_callback(NULL);
+		av++;
+	}
 	conf_parse(av[1]);
 	conf_read(NULL);
 
@@ -1495,7 +1508,8 @@ int main(int ac, char **av)
 	keypad(stdscr, TRUE);
 	curs_set(0);
 
-	if (COLS < 75 || LINES < 20) {
+	getmaxyx(stdscr, lines, columns);
+	if (columns < 75 || lines < 20) {
 		endwin();
 		printf("Your terminal should have at "
 			"least 20 lines and 75 columns\n");
@@ -1547,4 +1561,3 @@ int main(int ac, char **av)
 	endwin();
 	return 0;
 }
-

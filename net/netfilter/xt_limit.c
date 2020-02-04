@@ -18,6 +18,7 @@
 #include <linux/netfilter/xt_limit.h>
 
 struct xt_limit_priv {
+	spinlock_t lock;
 	unsigned long prev;
 	uint32_t credit;
 };
@@ -31,8 +32,6 @@ MODULE_ALIAS("ip6t_limit");
 /* The algorithm used is the Simple Token Bucket Filter (TBF)
  * see net/sched/sch_tbf.c in the linux source tree
  */
-
-static DEFINE_SPINLOCK(limit_lock);
 
 /* Rusty: This is my (non-mathematically-inclined) understanding of
    this algorithm.  The `average rate' in jiffies becomes your initial
@@ -73,8 +72,7 @@ limit_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	unsigned long now = jiffies;
 
 	par->cvm_reserved |= SKB_CVM_RESERVED_1;
-
-	spin_lock_bh(&limit_lock);
+	spin_lock_bh(&priv->lock);
 	priv->credit += (now - xchg(&priv->prev, now)) * CREDITS_PER_JIFFY;
 	if (priv->credit > r->credit_cap)
 		priv->credit = r->credit_cap;
@@ -82,11 +80,11 @@ limit_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	if (priv->credit >= r->cost) {
 		/* We're not limited. */
 		priv->credit -= r->cost;
-		spin_unlock_bh(&limit_lock);
+		spin_unlock_bh(&priv->lock);
 		return true;
 	}
 
-	spin_unlock_bh(&limit_lock);
+	spin_unlock_bh(&priv->lock);
 	return false;
 }
 
@@ -128,6 +126,8 @@ static int limit_mt_check(const struct xt_mtchk_param *par)
 		r->credit_cap = priv->credit; /* Credits full. */
 		r->cost = user2credits(r->avg);
 	}
+	spin_lock_init(&priv->lock);
+
 	return 0;
 }
 
@@ -138,6 +138,50 @@ static void limit_mt_destroy(const struct xt_mtdtor_param *par)
 	kfree(info->master);
 }
 
+#ifdef CONFIG_COMPAT
+struct compat_xt_rateinfo {
+	u_int32_t avg;
+	u_int32_t burst;
+
+	compat_ulong_t prev;
+	u_int32_t credit;
+	u_int32_t credit_cap, cost;
+
+	u_int32_t master;
+};
+
+/* To keep the full "prev" timestamp, the upper 32 bits are stored in the
+ * master pointer, which does not need to be preserved. */
+static void limit_mt_compat_from_user(void *dst, const void *src)
+{
+	const struct compat_xt_rateinfo *cm = src;
+	struct xt_rateinfo m = {
+		.avg		= cm->avg,
+		.burst		= cm->burst,
+		.prev		= cm->prev | (unsigned long)cm->master << 32,
+		.credit		= cm->credit,
+		.credit_cap	= cm->credit_cap,
+		.cost		= cm->cost,
+	};
+	memcpy(dst, &m, sizeof(m));
+}
+
+static int limit_mt_compat_to_user(void __user *dst, const void *src)
+{
+	const struct xt_rateinfo *m = src;
+	struct compat_xt_rateinfo cm = {
+		.avg		= m->avg,
+		.burst		= m->burst,
+		.prev		= m->prev,
+		.credit		= m->credit,
+		.credit_cap	= m->credit_cap,
+		.cost		= m->cost,
+		.master		= m->prev >> 32,
+	};
+	return copy_to_user(dst, &cm, sizeof(cm)) ? -EFAULT : 0;
+}
+#endif /* CONFIG_COMPAT */
+
 static struct xt_match limit_mt_reg __read_mostly = {
 	.name             = "limit",
 	.revision         = 0,
@@ -146,6 +190,12 @@ static struct xt_match limit_mt_reg __read_mostly = {
 	.checkentry       = limit_mt_check,
 	.destroy          = limit_mt_destroy,
 	.matchsize        = sizeof(struct xt_rateinfo),
+#ifdef CONFIG_COMPAT
+	.compatsize       = sizeof(struct compat_xt_rateinfo),
+	.compat_from_user = limit_mt_compat_from_user,
+	.compat_to_user   = limit_mt_compat_to_user,
+#endif
+	.usersize         = offsetof(struct xt_rateinfo, prev),
 	.me               = THIS_MODULE,
 };
 

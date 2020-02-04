@@ -129,8 +129,7 @@ config PPPOE
 	  which contains instruction on how to use this driver (under
 	  the heading "Kernel mode PPPoE").
 
-#config PPTP
-config PPPOPPTP
+config PPTP
 	tristate "PPP over IPv4 (PPTP)"
 	depends on PPP && NET_IPGRE_DEMUX
 	---help---

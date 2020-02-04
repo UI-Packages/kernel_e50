@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef __LINUX_FIB_RULES_H
 #define __LINUX_FIB_RULES_H
 
@@ -29,6 +30,11 @@ struct fib_rule_hdr {
 	__u32		flags;
 };
 
+struct fib_rule_uid_range {
+	__u32		start;
+	__u32		end;
+};
+
 enum {
 	FRA_UNSPEC,
 	FRA_DST,	/* destination address */
@@ -43,12 +49,15 @@ enum {
 	FRA_UNUSED5,
 	FRA_FWMARK,	/* mark */
 	FRA_FLOW,	/* flow/class id */
-	FRA_UNUSED6,
-	FRA_UNUSED7,
-	FRA_UNUSED8,
+	FRA_TUN_ID,
+	FRA_SUPPRESS_IFGROUP,
+	FRA_SUPPRESS_PREFIXLEN,
 	FRA_TABLE,	/* Extended table id */
 	FRA_FWMASK,	/* mask for netfilter mark */
 	FRA_OIFNAME,
+	FRA_PAD,
+	FRA_L3MDEV,	/* iif or oif is l3mdev goto its table */
+	FRA_UID_RANGE,	/* UID range */
 	__FRA_MAX
 };
 
@@ -64,8 +73,14 @@ enum {
 	FR_ACT_BLACKHOLE,	/* Drop without notification */
 	FR_ACT_UNREACHABLE,	/* Drop with ENETUNREACH */
 	FR_ACT_PROHIBIT,	/* Drop with EACCES */
+	FR_ACT_RES9,
+	FR_ACT_RES10,
+	FR_ACT_RES11,
+	FR_ACT_POLICY_FAILED,	/* Drop with EACCES */
 	__FR_ACT_MAX,
 };
+
+#define FR_ACT_FAILED_POLICY FR_ACT_POLICY_FAILED
 
 #define FR_ACT_MAX (__FR_ACT_MAX - 1)
 

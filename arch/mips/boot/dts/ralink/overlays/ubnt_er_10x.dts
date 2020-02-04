@@ -1,0 +1,39 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "ubiquiti,edgerouter-10x";
+	model = "Ubiquiti EdgeRouter 10X";
+
+	fragment@0 {
+		target-path = "/ethernet@1e100000";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			mediatek,ethsys = <&ethsys>;
+			mediatek,switch = <&gsw>;
+		};
+	};
+	fragment@1 {
+		target-path = "/gsw@1e110000";
+		__overlay__ {
+			interrupt-parent = <&gic>;
+			interrupts = <0 23 4>, <0 12 4>;
+			interrupt-names = "gsw", "rtl8367_int";
+		};
+	};
+	fragment@2 {
+		target-path = "/nand@1e003000/partition@740000";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		__overlay__ {
+			reg = <0x740000 0x1f4c0000>;
+		};
+	};
+	fragment@3 {
+		target-path = "/xhci@1E1C0000";
+		__overlay__ {
+			status = "okay";
+		};
+	};
+};

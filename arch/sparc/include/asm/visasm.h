@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SPARC64_VISASM_H
 #define _SPARC64_VISASM_H
 
@@ -59,7 +60,8 @@ static inline void save_and_clear_fpu(void) {
 "		" : : "i" (FPRS_FEF|FPRS_DU) :
 		"o5", "g1", "g2", "g3", "g7", "cc");
 }
-extern int vis_emul(struct pt_regs *, unsigned int);
+
+int vis_emul(struct pt_regs *, unsigned int);
 #endif
 
 #endif /* _SPARC64_ASI_H */

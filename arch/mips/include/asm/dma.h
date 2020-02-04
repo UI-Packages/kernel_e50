@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * linux/include/asm/dma.h: Defines for using and allocating dma channels.
  * Written by Hennus Bergman, 1992.
@@ -86,8 +87,8 @@
 #if defined(CONFIG_SGI_IP22) || defined(CONFIG_SGI_IP28)
 /* don't care; ISA bus master won't work, ISA slave DMA supports 32bit addr */
 #define MAX_DMA_ADDRESS		PAGE_OFFSET
-#elif defined (CONFIG_RALINK_MT7621)
-/* For System Memory is 128,256,512MB, Allocate up to 16,16,32M of available RAM to DMA */
+#elif defined (CONFIG_SOC_MT7621)
+/* For System Memory is 128,256,512MB, Allocate default 16MB RAM to DMA */
 #define MAX_DMA_ADDRESS		(PAGE_OFFSET + (CONFIG_KERNEL_START_ADDR - 0x80001000))
 #else
 #define MAX_DMA_ADDRESS		(PAGE_OFFSET + 0x01000000)

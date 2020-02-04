@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 # Support direct access to TILE-Gx hardware from user space, via the
 # gxio library, or from kernel space, via kernel IORPC support.
 config TILE_GXIO
@@ -24,5 +25,10 @@ config TILE_GXIO_TRIO
 
 # Support direct access to the TILE-Gx USB hardware from kernel space.
 config TILE_GXIO_USB_HOST
+	bool
+	select TILE_GXIO
+
+# Support direct access to the TILE-Gx UART hardware from kernel space.
+config TILE_GXIO_UART
 	bool
 	select TILE_GXIO

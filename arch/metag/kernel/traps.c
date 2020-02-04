@@ -10,6 +10,9 @@
 
 #include <linux/export.h>
 #include <linux/sched.h>
+#include <linux/sched/debug.h>
+#include <linux/sched/task.h>
+#include <linux/sched/task_stack.h>
 #include <linux/signal.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -33,6 +36,7 @@
 #include <asm/siginfo.h>
 #include <asm/traps.h>
 #include <asm/hwthread.h>
+#include <asm/setup.h>
 #include <asm/switch.h>
 #include <asm/user_gateway.h>
 #include <asm/syscall.h>
@@ -87,8 +91,8 @@ const char *trap_name(int trapno)
 
 static DEFINE_SPINLOCK(die_lock);
 
-void die(const char *str, struct pt_regs *regs, long err,
-	 unsigned long addr)
+void __noreturn die(const char *str, struct pt_regs *regs,
+		    long err, unsigned long addr)
 {
 	static int die_counter;
 
@@ -811,15 +815,14 @@ static void set_trigger_mask(unsigned int mask)
 }
 #endif
 
-void __cpuinit per_cpu_trap_init(unsigned long cpu)
+void per_cpu_trap_init(unsigned long cpu)
 {
 	TBIRES int_context;
 	unsigned int thread = cpu_2_hwthread_id[cpu];
 
 	set_trigger_mask(TBI_INTS_INIT(thread) | /* interrupts */
 			 TBI_TRIG_BIT(TBID_SIGNUM_LWK) | /* low level kick */
-			 TBI_TRIG_BIT(TBID_SIGNUM_SW1) |
-			 TBI_TRIG_BIT(TBID_SIGNUM_SWS));
+			 TBI_TRIG_BIT(TBID_SIGNUM_SW1));
 
 	/* non-priv - use current stack */
 	int_context.Sig.pCtx = NULL;
@@ -841,7 +844,7 @@ void __init trap_init(void)
 	_pTBI->fnSigs[TBID_SIGNUM_SW1] = switch1_handler;
 	_pTBI->fnSigs[TBID_SIGNUM_SW2] = switchx_handler;
 	_pTBI->fnSigs[TBID_SIGNUM_SW3] = switchx_handler;
-	_pTBI->fnSigs[TBID_SIGNUM_SWK] = kick_handler;
+	_pTBI->fnSigs[TBID_SIGNUM_LWK] = kick_handler;
 
 #ifdef CONFIG_METAG_META21
 	_pTBI->fnSigs[TBID_SIGNUM_DFR] = __TBIHandleDFR;

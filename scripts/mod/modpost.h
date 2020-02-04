@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -7,9 +8,19 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#if !(defined(__APPLE__) || defined(__CYGWIN__))
 #include <elf.h>
+#else
+#include "elf.h"
+#endif
 
 #include "elfconfig.h"
+
+/* On BSD-alike OSes elf.h defines these according to host's word size */
+#undef ELF_ST_BIND
+#undef ELF_ST_TYPE
+#undef ELF_R_SYM
+#undef ELF_R_TYPE
 
 #if KERNEL_ELFCLASS == ELFCLASS32
 
@@ -127,7 +138,7 @@ struct elf_info {
 	Elf_Section  export_gpl_sec;
 	Elf_Section  export_unused_gpl_sec;
 	Elf_Section  export_gpl_future_sec;
-	const char   *strtab;
+	char         *strtab;
 	char	     *modinfo;
 	unsigned int modinfo_len;
 

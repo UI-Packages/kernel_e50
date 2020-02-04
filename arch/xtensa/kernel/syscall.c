@@ -15,7 +15,7 @@
  * Kevin Chea
  *
  */
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/syscall.h>
 #include <asm/unistd.h>
 #include <linux/linkage.h>
@@ -25,6 +25,7 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/mman.h>
+#include <linux/sched/mm.h>
 #include <linux/shm.h>
 
 typedef void (*syscall_t)(void);
@@ -57,6 +58,7 @@ asmlinkage long xtensa_fadvise64_64(int fd, int advice,
 	return sys_fadvise64_64(fd, offset, len, advice);
 }
 
+#ifdef CONFIG_MMU
 unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr,
 		unsigned long len, unsigned long pgoff, unsigned long flags)
 {
@@ -93,3 +95,4 @@ unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr,
 			addr = COLOUR_ALIGN(addr, pgoff);
 	}
 }
+#endif

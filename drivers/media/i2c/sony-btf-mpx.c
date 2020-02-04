@@ -9,10 +9,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
  */
 
 #include <linux/module.h>
@@ -30,7 +26,7 @@ MODULE_LICENSE("GPL v2");
 
 static int debug;
 module_param(debug, int, 0644);
-MODULE_PARM_DESC(debug, "debug level 0=off(default) 1=on\n");
+MODULE_PARM_DESC(debug, "debug level 0=off(default) 1=on");
 
 /* #define MPX_DEBUG */
 
@@ -327,18 +323,18 @@ static int sony_btf_mpx_s_tuner(struct v4l2_subdev *sd, const struct v4l2_tuner 
 
 /* --------------------------------------------------------------------------*/
 
-static const struct v4l2_subdev_core_ops sony_btf_mpx_core_ops = {
-	.s_std = sony_btf_mpx_s_std,
-};
-
 static const struct v4l2_subdev_tuner_ops sony_btf_mpx_tuner_ops = {
 	.s_tuner = sony_btf_mpx_s_tuner,
 	.g_tuner = sony_btf_mpx_g_tuner,
 };
 
+static const struct v4l2_subdev_video_ops sony_btf_mpx_video_ops = {
+	.s_std = sony_btf_mpx_s_std,
+};
+
 static const struct v4l2_subdev_ops sony_btf_mpx_ops = {
-	.core = &sony_btf_mpx_core_ops,
 	.tuner = &sony_btf_mpx_tuner_ops,
+	.video = &sony_btf_mpx_video_ops,
 };
 
 /* --------------------------------------------------------------------------*/
@@ -355,7 +351,7 @@ static int sony_btf_mpx_probe(struct i2c_client *client,
 	v4l_info(client, "chip found @ 0x%x (%s)\n",
 			client->addr << 1, client->adapter->name);
 
-	t = kzalloc(sizeof(struct sony_btf_mpx), GFP_KERNEL);
+	t = devm_kzalloc(&client->dev, sizeof(*t), GFP_KERNEL);
 	if (t == NULL)
 		return -ENOMEM;
 
@@ -374,7 +370,6 @@ static int sony_btf_mpx_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 
 	v4l2_device_unregister_subdev(sd);
-	kfree(to_state(sd));
 
 	return 0;
 }
@@ -389,7 +384,6 @@ MODULE_DEVICE_TABLE(i2c, sony_btf_mpx_id);
 
 static struct i2c_driver sony_btf_mpx_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "sony-btf-mpx",
 	},
 	.probe = sony_btf_mpx_probe,

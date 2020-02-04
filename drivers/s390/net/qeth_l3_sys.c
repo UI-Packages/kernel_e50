@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *    Copyright IBM Corp. 2007
  *    Author(s): Utz Bacher <utz.bacher@de.ibm.com>,
@@ -8,6 +9,7 @@
 
 #include <linux/slab.h>
 #include <asm/ebcdic.h>
+#include <linux/hashtable.h>
 #include "qeth_l3.h"
 
 #define QETH_DEVICE_ATTR(_id, _name, _mode, _show, _store) \
@@ -57,29 +59,26 @@ static ssize_t qeth_l3_dev_route_store(struct qeth_card *card,
 		const char *buf, size_t count)
 {
 	enum qeth_routing_types old_route_type = route->type;
-	char *tmp;
 	int rc = 0;
 
-	tmp = strsep((char **) &buf, "\n");
 	mutex_lock(&card->conf_mutex);
-	if (!strcmp(tmp, "no_router")) {
+	if (sysfs_streq(buf, "no_router")) {
 		route->type = NO_ROUTER;
-	} else if (!strcmp(tmp, "primary_connector")) {
+	} else if (sysfs_streq(buf, "primary_connector")) {
 		route->type = PRIMARY_CONNECTOR;
-	} else if (!strcmp(tmp, "secondary_connector")) {
+	} else if (sysfs_streq(buf, "secondary_connector")) {
 		route->type = SECONDARY_CONNECTOR;
-	} else if (!strcmp(tmp, "primary_router")) {
+	} else if (sysfs_streq(buf, "primary_router")) {
 		route->type = PRIMARY_ROUTER;
-	} else if (!strcmp(tmp, "secondary_router")) {
+	} else if (sysfs_streq(buf, "secondary_router")) {
 		route->type = SECONDARY_ROUTER;
-	} else if (!strcmp(tmp, "multicast_router")) {
+	} else if (sysfs_streq(buf, "multicast_router")) {
 		route->type = MULTICAST_ROUTER;
 	} else {
 		rc = -EINVAL;
 		goto out;
 	}
-	if (((card->state == CARD_STATE_SOFTSETUP) ||
-	     (card->state == CARD_STATE_UP)) &&
+	if (qeth_card_hw_is_reachable(card) &&
 	    (old_route_type != route->type)) {
 		if (prot == QETH_PROT_IPV4)
 			rc = qeth_l3_setrouting_v4(card);
@@ -208,7 +207,7 @@ static ssize_t qeth_l3_dev_sniffer_store(struct device *dev,
 		goto out;
 	}
 
-	rc = strict_strtoul(buf, 16, &i);
+	rc = kstrtoul(buf, 16, &i);
 	if (rc) {
 		rc = -EINVAL;
 		goto out;
@@ -252,9 +251,6 @@ static ssize_t qeth_l3_dev_hsuid_show(struct device *dev,
 	if (card->info.type != QETH_CARD_TYPE_IQD)
 		return -EPERM;
 
-	if (card->state == CARD_STATE_DOWN)
-		return -EPERM;
-
 	memcpy(tmp_hsuid, card->options.hsuid, sizeof(tmp_hsuid));
 	EBCASC(tmp_hsuid, 8);
 	return sprintf(buf, "%s\n", tmp_hsuid);
@@ -288,19 +284,21 @@ static ssize_t qeth_l3_dev_hsuid_store(struct device *dev,
 	if (card->options.hsuid[0]) {
 		/* delete old ip address */
 		addr = qeth_l3_get_addr_buffer(QETH_PROT_IPV6);
-		if (addr != NULL) {
-			addr->u.a6.addr.s6_addr32[0] = 0xfe800000;
-			addr->u.a6.addr.s6_addr32[1] = 0x00000000;
-			for (i = 8; i < 16; i++)
-				addr->u.a6.addr.s6_addr[i] =
-					card->options.hsuid[i - 8];
-			addr->u.a6.pfxlen = 0;
-			addr->type = QETH_IP_TYPE_NORMAL;
-		} else
+		if (!addr)
 			return -ENOMEM;
-		if (!qeth_l3_delete_ip(card, addr))
-			kfree(addr);
-		qeth_l3_set_ip_addr_list(card);
+
+		addr->u.a6.addr.s6_addr32[0] = cpu_to_be32(0xfe800000);
+		addr->u.a6.addr.s6_addr32[1] = 0x00000000;
+		for (i = 8; i < 16; i++)
+			addr->u.a6.addr.s6_addr[i] =
+				card->options.hsuid[i - 8];
+		addr->u.a6.pfxlen = 0;
+		addr->type = QETH_IP_TYPE_NORMAL;
+
+		spin_lock_bh(&card->ip_lock);
+		qeth_l3_delete_ip(card, addr);
+		spin_unlock_bh(&card->ip_lock);
+		kfree(addr);
 	}
 
 	if (strlen(tmp) == 0) {
@@ -315,17 +313,15 @@ static ssize_t qeth_l3_dev_hsuid_store(struct device *dev,
 	if (qeth_configure_cq(card, QETH_CQ_ENABLED))
 		return -EPERM;
 
-	for (i = 0; i < 8; i++)
-		card->options.hsuid[i] = ' ';
-	card->options.hsuid[8] = '\0';
-	strncpy(card->options.hsuid, tmp, strlen(tmp));
+	snprintf(card->options.hsuid, sizeof(card->options.hsuid),
+		 "%-8s", tmp);
 	ASCEBC(card->options.hsuid, 8);
 	if (card->dev)
 		memcpy(card->dev->perm_addr, card->options.hsuid, 9);
 
 	addr = qeth_l3_get_addr_buffer(QETH_PROT_IPV6);
 	if (addr != NULL) {
-		addr->u.a6.addr.s6_addr32[0] = 0xfe800000;
+		addr->u.a6.addr.s6_addr32[0] = cpu_to_be32(0xfe800000);
 		addr->u.a6.addr.s6_addr32[1] = 0x00000000;
 		for (i = 8; i < 16; i++)
 			addr->u.a6.addr.s6_addr[i] = card->options.hsuid[i - 8];
@@ -333,9 +329,11 @@ static ssize_t qeth_l3_dev_hsuid_store(struct device *dev,
 		addr->type = QETH_IP_TYPE_NORMAL;
 	} else
 		return -ENOMEM;
-	if (!qeth_l3_add_ip(card, addr))
-		kfree(addr);
-	qeth_l3_set_ip_addr_list(card);
+
+	spin_lock_bh(&card->ip_lock);
+	qeth_l3_add_ip(card, addr);
+	spin_unlock_bh(&card->ip_lock);
+	kfree(addr);
 
 	return count;
 }
@@ -353,7 +351,7 @@ static struct attribute *qeth_l3_device_attrs[] = {
 	NULL,
 };
 
-static struct attribute_group qeth_l3_device_attr_group = {
+static const struct attribute_group qeth_l3_device_attr_group = {
 	.attrs = qeth_l3_device_attrs,
 };
 
@@ -372,8 +370,7 @@ static ssize_t qeth_l3_dev_ipato_enable_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct qeth_card *card = dev_get_drvdata(dev);
-	struct qeth_ipaddr *tmpipa, *t;
-	char *tmp;
+	bool enable;
 	int rc = 0;
 
 	if (!card)
@@ -386,28 +383,19 @@ static ssize_t qeth_l3_dev_ipato_enable_store(struct device *dev,
 		goto out;
 	}
 
-	tmp = strsep((char **) &buf, "\n");
-	if (!strcmp(tmp, "toggle")) {
-		card->ipato.enabled = (card->ipato.enabled)? 0 : 1;
-	} else if (!strcmp(tmp, "1")) {
-		card->ipato.enabled = 1;
-		list_for_each_entry_safe(tmpipa, t, card->ip_tbd_list, entry) {
-			if ((tmpipa->type == QETH_IP_TYPE_NORMAL) &&
-				qeth_l3_is_addr_covered_by_ipato(card, tmpipa))
-				tmpipa->set_flags |=
-					QETH_IPA_SETIP_TAKEOVER_FLAG;
-		}
-
-	} else if (!strcmp(tmp, "0")) {
-		card->ipato.enabled = 0;
-		list_for_each_entry_safe(tmpipa, t, card->ip_tbd_list, entry) {
-			if (tmpipa->set_flags &
-				QETH_IPA_SETIP_TAKEOVER_FLAG)
-				tmpipa->set_flags &=
-					~QETH_IPA_SETIP_TAKEOVER_FLAG;
-		}
-	} else
+	if (sysfs_streq(buf, "toggle")) {
+		enable = !card->ipato.enabled;
+	} else if (kstrtobool(buf, &enable)) {
 		rc = -EINVAL;
+		goto out;
+	}
+
+	if (card->ipato.enabled != enable) {
+		card->ipato.enabled = enable;
+		spin_lock_bh(&card->ip_lock);
+		qeth_l3_update_ipato(card);
+		spin_unlock_bh(&card->ip_lock);
+	}
 out:
 	mutex_unlock(&card->conf_mutex);
 	return rc ? rc : count;
@@ -433,22 +421,27 @@ static ssize_t qeth_l3_dev_ipato_invert4_store(struct device *dev,
 				const char *buf, size_t count)
 {
 	struct qeth_card *card = dev_get_drvdata(dev);
-	char *tmp;
+	bool invert;
 	int rc = 0;
 
 	if (!card)
 		return -EINVAL;
 
 	mutex_lock(&card->conf_mutex);
-	tmp = strsep((char **) &buf, "\n");
-	if (!strcmp(tmp, "toggle")) {
-		card->ipato.invert4 = (card->ipato.invert4)? 0 : 1;
-	} else if (!strcmp(tmp, "1")) {
-		card->ipato.invert4 = 1;
-	} else if (!strcmp(tmp, "0")) {
-		card->ipato.invert4 = 0;
-	} else
+	if (sysfs_streq(buf, "toggle")) {
+		invert = !card->ipato.invert4;
+	} else if (kstrtobool(buf, &invert)) {
 		rc = -EINVAL;
+		goto out;
+	}
+
+	if (card->ipato.invert4 != invert) {
+		card->ipato.invert4 = invert;
+		spin_lock_bh(&card->ip_lock);
+		qeth_l3_update_ipato(card);
+		spin_unlock_bh(&card->ip_lock);
+	}
+out:
 	mutex_unlock(&card->conf_mutex);
 	return rc ? rc : count;
 }
@@ -461,7 +454,6 @@ static ssize_t qeth_l3_dev_ipato_add_show(char *buf, struct qeth_card *card,
 			enum qeth_prot_versions proto)
 {
 	struct qeth_ipato_entry *ipatoe;
-	unsigned long flags;
 	char addr_str[40];
 	int entry_len; /* length of 1 entry string, differs between v4 and v6 */
 	int i = 0;
@@ -469,7 +461,7 @@ static ssize_t qeth_l3_dev_ipato_add_show(char *buf, struct qeth_card *card,
 	entry_len = (proto == QETH_PROT_IPV4)? 12 : 40;
 	/* add strlen for "/<mask>\n" */
 	entry_len += (proto == QETH_PROT_IPV4)? 5 : 6;
-	spin_lock_irqsave(&card->ip_lock, flags);
+	spin_lock_bh(&card->ip_lock);
 	list_for_each_entry(ipatoe, &card->ipato.entries, entry) {
 		if (ipatoe->proto != proto)
 			continue;
@@ -482,7 +474,7 @@ static ssize_t qeth_l3_dev_ipato_add_show(char *buf, struct qeth_card *card,
 		i += snprintf(buf + i, PAGE_SIZE - i,
 			      "%s/%i\n", addr_str, ipatoe->mask_bits);
 	}
-	spin_unlock_irqrestore(&card->ip_lock, flags);
+	spin_unlock_bh(&card->ip_lock);
 	i += snprintf(buf + i, PAGE_SIZE - i, "\n");
 
 	return i;
@@ -615,22 +607,27 @@ static ssize_t qeth_l3_dev_ipato_invert6_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct qeth_card *card = dev_get_drvdata(dev);
-	char *tmp;
+	bool invert;
 	int rc = 0;
 
 	if (!card)
 		return -EINVAL;
 
 	mutex_lock(&card->conf_mutex);
-	tmp = strsep((char **) &buf, "\n");
-	if (!strcmp(tmp, "toggle")) {
-		card->ipato.invert6 = (card->ipato.invert6)? 0 : 1;
-	} else if (!strcmp(tmp, "1")) {
-		card->ipato.invert6 = 1;
-	} else if (!strcmp(tmp, "0")) {
-		card->ipato.invert6 = 0;
-	} else
+	if (sysfs_streq(buf, "toggle")) {
+		invert = !card->ipato.invert6;
+	} else if (kstrtobool(buf, &invert)) {
 		rc = -EINVAL;
+		goto out;
+	}
+
+	if (card->ipato.invert6 != invert) {
+		card->ipato.invert6 = invert;
+		spin_lock_bh(&card->ip_lock);
+		qeth_l3_update_ipato(card);
+		spin_unlock_bh(&card->ip_lock);
+	}
+out:
 	mutex_unlock(&card->conf_mutex);
 	return rc ? rc : count;
 }
@@ -691,7 +688,7 @@ static struct attribute *qeth_ipato_device_attrs[] = {
 	NULL,
 };
 
-static struct attribute_group qeth_device_ipato_group = {
+static const struct attribute_group qeth_device_ipato_group = {
 	.name = "ipa_takeover",
 	.attrs = qeth_ipato_device_attrs,
 };
@@ -701,14 +698,14 @@ static ssize_t qeth_l3_dev_vipa_add_show(char *buf, struct qeth_card *card,
 {
 	struct qeth_ipaddr *ipaddr;
 	char addr_str[40];
+	int str_len = 0;
 	int entry_len; /* length of 1 entry string, differs between v4 and v6 */
-	unsigned long flags;
-	int i = 0;
+	int i;
 
 	entry_len = (proto == QETH_PROT_IPV4)? 12 : 40;
 	entry_len += 2; /* \n + terminator */
-	spin_lock_irqsave(&card->ip_lock, flags);
-	list_for_each_entry(ipaddr, &card->ip_list, entry) {
+	spin_lock_bh(&card->ip_lock);
+	hash_for_each(card->ip_htable, i, ipaddr, hnode) {
 		if (ipaddr->proto != proto)
 			continue;
 		if (ipaddr->type != QETH_IP_TYPE_VIPA)
@@ -716,16 +713,17 @@ static ssize_t qeth_l3_dev_vipa_add_show(char *buf, struct qeth_card *card,
 		/* String must not be longer than PAGE_SIZE. So we check if
 		 * string length gets near PAGE_SIZE. Then we can savely display
 		 * the next IPv6 address (worst case, compared to IPv4) */
-		if ((PAGE_SIZE - i) <= entry_len)
+		if ((PAGE_SIZE - str_len) <= entry_len)
 			break;
 		qeth_l3_ipaddr_to_string(proto, (const u8 *)&ipaddr->u,
 			addr_str);
-		i += snprintf(buf + i, PAGE_SIZE - i, "%s\n", addr_str);
+		str_len += snprintf(buf + str_len, PAGE_SIZE - str_len, "%s\n",
+				    addr_str);
 	}
-	spin_unlock_irqrestore(&card->ip_lock, flags);
-	i += snprintf(buf + i, PAGE_SIZE - i, "\n");
+	spin_unlock_bh(&card->ip_lock);
+	str_len += snprintf(buf + str_len, PAGE_SIZE - str_len, "\n");
 
-	return i;
+	return str_len;
 }
 
 static ssize_t qeth_l3_dev_vipa_add4_show(struct device *dev,
@@ -853,7 +851,7 @@ static struct attribute *qeth_vipa_device_attrs[] = {
 	NULL,
 };
 
-static struct attribute_group qeth_device_vipa_group = {
+static const struct attribute_group qeth_device_vipa_group = {
 	.name = "vipa",
 	.attrs = qeth_vipa_device_attrs,
 };
@@ -863,14 +861,14 @@ static ssize_t qeth_l3_dev_rxip_add_show(char *buf, struct qeth_card *card,
 {
 	struct qeth_ipaddr *ipaddr;
 	char addr_str[40];
+	int str_len = 0;
 	int entry_len; /* length of 1 entry string, differs between v4 and v6 */
-	unsigned long flags;
-	int i = 0;
+	int i;
 
 	entry_len = (proto == QETH_PROT_IPV4)? 12 : 40;
 	entry_len += 2; /* \n + terminator */
-	spin_lock_irqsave(&card->ip_lock, flags);
-	list_for_each_entry(ipaddr, &card->ip_list, entry) {
+	spin_lock_bh(&card->ip_lock);
+	hash_for_each(card->ip_htable, i, ipaddr, hnode) {
 		if (ipaddr->proto != proto)
 			continue;
 		if (ipaddr->type != QETH_IP_TYPE_RXIP)
@@ -878,16 +876,17 @@ static ssize_t qeth_l3_dev_rxip_add_show(char *buf, struct qeth_card *card,
 		/* String must not be longer than PAGE_SIZE. So we check if
 		 * string length gets near PAGE_SIZE. Then we can savely display
 		 * the next IPv6 address (worst case, compared to IPv4) */
-		if ((PAGE_SIZE - i) <= entry_len)
+		if ((PAGE_SIZE - str_len) <= entry_len)
 			break;
 		qeth_l3_ipaddr_to_string(proto, (const u8 *)&ipaddr->u,
 			addr_str);
-		i += snprintf(buf + i, PAGE_SIZE - i, "%s\n", addr_str);
+		str_len += snprintf(buf + str_len, PAGE_SIZE - str_len, "%s\n",
+				    addr_str);
 	}
-	spin_unlock_irqrestore(&card->ip_lock, flags);
-	i += snprintf(buf + i, PAGE_SIZE - i, "\n");
+	spin_unlock_bh(&card->ip_lock);
+	str_len += snprintf(buf + str_len, PAGE_SIZE - str_len, "\n");
 
-	return i;
+	return str_len;
 }
 
 static ssize_t qeth_l3_dev_rxip_add4_show(struct device *dev,
@@ -904,9 +903,26 @@ static ssize_t qeth_l3_dev_rxip_add4_show(struct device *dev,
 static int qeth_l3_parse_rxipe(const char *buf, enum qeth_prot_versions proto,
 		 u8 *addr)
 {
+	__be32 ipv4_addr;
+	struct in6_addr ipv6_addr;
+
 	if (qeth_l3_string_to_ipaddr(buf, proto, addr)) {
 		return -EINVAL;
 	}
+	if (proto == QETH_PROT_IPV4) {
+		memcpy(&ipv4_addr, addr, sizeof(ipv4_addr));
+		if (ipv4_is_multicast(ipv4_addr)) {
+			QETH_DBF_MESSAGE(2, "multicast rxip not supported.\n");
+			return -EINVAL;
+		}
+	} else if (proto == QETH_PROT_IPV6) {
+		memcpy(&ipv6_addr, addr, sizeof(ipv6_addr));
+		if (ipv6_addr_is_multicast(&ipv6_addr)) {
+			QETH_DBF_MESSAGE(2, "multicast rxip not supported.\n");
+			return -EINVAL;
+		}
+	}
+
 	return 0;
 }
 
@@ -1015,7 +1031,7 @@ static struct attribute *qeth_rxip_device_attrs[] = {
 	NULL,
 };
 
-static struct attribute_group qeth_device_rxip_group = {
+static const struct attribute_group qeth_device_rxip_group = {
 	.name = "rxip",
 	.attrs = qeth_rxip_device_attrs,
 };
@@ -1058,3 +1074,14 @@ void qeth_l3_remove_device_attributes(struct device *dev)
 	sysfs_remove_group(&dev->kobj, &qeth_device_vipa_group);
 	sysfs_remove_group(&dev->kobj, &qeth_device_rxip_group);
 }
+
+const struct attribute_group *qeth_l3_attr_groups[] = {
+	&qeth_device_attr_group,
+	&qeth_device_blkt_group,
+	/* l3 specific, see l3_{create,remove}_device_attributes(): */
+	&qeth_l3_device_attr_group,
+	&qeth_device_ipato_group,
+	&qeth_device_vipa_group,
+	&qeth_device_rxip_group,
+NULL,
+};

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_METAG_IRQ_H
 #define __ASM_METAG_IRQ_H
 
@@ -6,8 +7,12 @@ extern void irq_ctx_init(int cpu);
 extern void irq_ctx_exit(int cpu);
 # define __ARCH_HAS_DO_SOFTIRQ
 #else
-# define irq_ctx_init(cpu) do { } while (0)
-# define irq_ctx_exit(cpu) do { } while (0)
+static inline void irq_ctx_init(int cpu)
+{
+}
+static inline void irq_ctx_exit(int cpu)
+{
+}
 #endif
 
 void tbi_startup_interrupt(int);
@@ -17,6 +22,7 @@ struct pt_regs;
 
 int tbisig_map(unsigned int hw);
 extern void do_IRQ(int irq, struct pt_regs *regs);
+extern void init_IRQ(void);
 
 #ifdef CONFIG_METAG_SUSPEND_MEM
 int traps_save_context(void);

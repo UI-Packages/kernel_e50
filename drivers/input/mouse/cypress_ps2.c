@@ -15,7 +15,6 @@
  * the Free Software Foundation.
  */
 
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -108,7 +107,7 @@ static int cypress_ps2_read_cmd_status(struct psmouse *psmouse,
 	enum psmouse_state old_state;
 	int pktsize;
 
-	ps2_begin_command(&psmouse->ps2dev);
+	ps2_begin_command(ps2dev);
 
 	old_state = psmouse->state;
 	psmouse->state = PSMOUSE_CMD_MODE;
@@ -134,7 +133,7 @@ out:
 	psmouse->state = old_state;
 	psmouse->pktcnt = 0;
 
-	ps2_end_command(&psmouse->ps2dev);
+	ps2_end_command(ps2dev);
 
 	return rc;
 }
@@ -415,8 +414,6 @@ static int cypress_set_input_params(struct input_dev *input,
 	__set_bit(BTN_RIGHT, input->keybit);
 	__set_bit(BTN_MIDDLE, input->keybit);
 
-	input_set_drvdata(input, cytp);
-
 	return 0;
 }
 
@@ -539,7 +536,7 @@ static void cypress_process_packet(struct psmouse *psmouse, bool zero_pkt)
 		pos[i].y = contact->y;
 	}
 
-	input_mt_assign_slots(input, slots, pos, n);
+	input_mt_assign_slots(input, slots, pos, n, 0);
 
 	for (i = 0; i < n; i++) {
 		contact = &report_data.contacts[i];
@@ -665,14 +662,14 @@ int cypress_init(struct psmouse *psmouse)
 {
 	struct cytp_data *cytp;
 
-	cytp = (struct cytp_data *)kzalloc(sizeof(struct cytp_data), GFP_KERNEL);
-	psmouse->private = (void *)cytp;
-	if (cytp == NULL)
+	cytp = kzalloc(sizeof(struct cytp_data), GFP_KERNEL);
+	if (!cytp)
 		return -ENOMEM;
 
-	cypress_reset(psmouse);
-
+	psmouse->private = cytp;
 	psmouse->pktsize = 8;
+
+	cypress_reset(psmouse);
 
 	if (cypress_query_hardware(psmouse)) {
 		psmouse_err(psmouse, "Unable to query Trackpad hardware.\n");
@@ -710,9 +707,4 @@ err_exit:
 	kfree(cytp);
 
 	return -1;
-}
-
-bool cypress_supported(void)
-{
-	return true;
 }

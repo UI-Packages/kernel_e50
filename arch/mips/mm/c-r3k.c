@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * r2300.c: R2000 and R3000 specific mmu/cache code.
  *
@@ -9,7 +10,6 @@
  * Copyright (C) 1998 Gleb Raiko & Vladimir Roganov
  * Copyright (C) 2001, 2004, 2007  Maciej W. Rozycki
  */
-#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/smp.h>
@@ -26,7 +26,7 @@
 static unsigned long icache_size, dcache_size;		/* Size in bytes */
 static unsigned long icache_lsize, dcache_lsize;	/* Size in bytes */
 
-unsigned long __cpuinit r3k_cache_size(unsigned long ca_flags)
+unsigned long r3k_cache_size(unsigned long ca_flags)
 {
 	unsigned long flags, status, dummy, size;
 	volatile unsigned long *p;
@@ -61,7 +61,7 @@ unsigned long __cpuinit r3k_cache_size(unsigned long ca_flags)
 	return size * sizeof(*p);
 }
 
-unsigned long __cpuinit r3k_cache_lsize(unsigned long ca_flags)
+unsigned long r3k_cache_lsize(unsigned long ca_flags)
 {
 	unsigned long flags, status, lsize, i;
 	volatile unsigned long *p;
@@ -90,7 +90,7 @@ unsigned long __cpuinit r3k_cache_lsize(unsigned long ca_flags)
 	return lsize * sizeof(*p);
 }
 
-static void __cpuinit r3k_probe_cache(void)
+static void r3k_probe_cache(void)
 {
 	dcache_size = r3k_cache_size(ST0_ISC);
 	if (dcache_size)
@@ -274,12 +274,6 @@ static void r3k_flush_data_cache_page(unsigned long addr)
 {
 }
 
-static void r3_mips_flush_data_cache_range(struct vm_area_struct *vma,
-	struct page *page, unsigned long addr, unsigned long size)
-{
-	r3k_flush_cache_page(vma, addr, page_to_pfn(page));
-}
-
 static void r3k_flush_cache_sigtramp(unsigned long addr)
 {
 	unsigned long flags;
@@ -318,7 +312,7 @@ static void r3k_dma_cache_wback_inv(unsigned long start, unsigned long size)
 	r3k_flush_dcache_range(start, start + size);
 }
 
-void __cpuinit r3k_cache_init(void)
+void r3k_cache_init(void)
 {
 	extern void build_clear_page(void);
 	extern void build_copy_page(void);
@@ -328,17 +322,18 @@ void __cpuinit r3k_cache_init(void)
 	flush_cache_all = r3k_flush_cache_all;
 	__flush_cache_all = r3k___flush_cache_all;
 	flush_cache_mm = r3k_flush_cache_mm;
-	mips_flush_cache_range = r3k_mips_flush_cache_range;
+	flush_cache_range = r3k_flush_cache_range;
 	flush_cache_page = r3k_flush_cache_page;
 	flush_icache_range = r3k_flush_icache_range;
 	local_flush_icache_range = r3k_flush_icache_range;
+	__flush_icache_user_range = r3k_flush_icache_range;
+	__local_flush_icache_user_range = r3k_flush_icache_range;
 
 	__flush_kernel_vmap_range = r3k_flush_kernel_vmap_range;
 
 	flush_cache_sigtramp = r3k_flush_cache_sigtramp;
 	local_flush_data_cache_page = local_r3k_flush_data_cache_page;
 	flush_data_cache_page = r3k_flush_data_cache_page;
-	flush_data_cache_range = r3_flush_data_cache_range;
 
 	_dma_cache_wback_inv = r3k_dma_cache_wback_inv;
 	_dma_cache_wback = r3k_dma_cache_wback_inv;

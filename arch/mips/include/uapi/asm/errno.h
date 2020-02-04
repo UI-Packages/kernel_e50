@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
@@ -102,7 +103,7 @@
 #define EWOULDBLOCK	EAGAIN	/* Operation would block */
 #define EALREADY	149	/* Operation already in progress */
 #define EINPROGRESS	150	/* Operation now in progress */
-#define ESTALE		151	/* Stale NFS file handle */
+#define ESTALE		151	/* Stale file handle */
 #define ECANCELED	158	/* AIO operation canceled */
 
 /*

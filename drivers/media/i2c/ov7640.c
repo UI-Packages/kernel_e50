@@ -9,10 +9,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
  */
 
 #include <linux/init.h>
@@ -20,7 +16,6 @@
 #include <linux/i2c.h>
 #include <linux/videodev2.h>
 #include <media/v4l2-device.h>
-#include <media/v4l2-chip-ident.h>
 #include <linux/slab.h>
 
 MODULE_DESCRIPTION("OmniVision ov7640 sensor driver");
@@ -59,7 +54,7 @@ static int ov7640_probe(struct i2c_client *client,
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA))
 		return -ENODEV;
 
-	sd = kzalloc(sizeof(struct v4l2_subdev), GFP_KERNEL);
+	sd = devm_kzalloc(&client->dev, sizeof(*sd), GFP_KERNEL);
 	if (sd == NULL)
 		return -ENOMEM;
 	v4l2_i2c_subdev_init(sd, client, &ov7640_ops);
@@ -71,7 +66,6 @@ static int ov7640_probe(struct i2c_client *client,
 
 	if (write_regs(client, initial_registers) < 0) {
 		v4l_err(client, "error initializing OV7640\n");
-		kfree(sd);
 		return -ENODEV;
 	}
 
@@ -84,7 +78,7 @@ static int ov7640_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 
 	v4l2_device_unregister_subdev(sd);
-	kfree(sd);
+
 	return 0;
 }
 
@@ -96,7 +90,6 @@ MODULE_DEVICE_TABLE(i2c, ov7640_id);
 
 static struct i2c_driver ov7640_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "ov7640",
 	},
 	.probe = ov7640_probe,

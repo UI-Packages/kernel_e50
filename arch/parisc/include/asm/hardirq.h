@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* hardirq.h: PA-RISC hard IRQ support.
  *
  * Copyright (C) 2001 Matthew Wilcox <matthew@wil.cx>
@@ -21,7 +22,6 @@ typedef struct {
 	unsigned int irq_stack_usage;
 #ifdef CONFIG_SMP
 	unsigned int irq_resched_count;
-	unsigned int irq_call_count;
 #endif
 	unsigned int irq_unaligned_count;
 	unsigned int irq_fpassist_count;

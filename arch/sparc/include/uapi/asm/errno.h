@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _SPARC_ERRNO_H
 #define _SPARC_ERRNO_H
 
@@ -40,7 +41,7 @@
 #define EPROCLIM        67      /* SUNOS: Too many processes */
 #define	EUSERS		68	/* Too many users */
 #define	EDQUOT		69	/* Quota exceeded */
-#define	ESTALE		70	/* Stale NFS file handle */
+#define	ESTALE		70	/* Stale file handle */
 #define	EREMOTE		71	/* Object is remote */
 #define	ENOSTR		72	/* Device not a stream */
 #define	ETIME		73	/* Timer expired */

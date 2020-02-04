@@ -17,10 +17,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 /*
@@ -93,7 +89,6 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/input.h>
-#include <media/v4l2-chip-ident.h>
 #include "gspca.h"
 /* Include pac common sof detection functions */
 #include "pac_common.h"
@@ -106,8 +101,7 @@
 #define PAC7302_EXPOSURE_DEFAULT	 66 /* 33 ms / 30 fps */
 #define PAC7302_EXPOSURE_KNEE		133 /* 66 ms / 15 fps */
 
-MODULE_AUTHOR("Jean-Francois Moine <http://moinejf.free.fr>, "
-		"Thomas Kaiser thomas@kaiser-linux.li");
+MODULE_AUTHOR("Jean-Francois Moine <http://moinejf.free.fr>, Thomas Kaiser thomas@kaiser-linux.li");
 MODULE_DESCRIPTION("Pixart PAC7302");
 MODULE_LICENSE("GPL");
 
@@ -395,9 +389,9 @@ static void setbrightcont(struct gspca_dev *gspca_dev)
 	reg_w(gspca_dev, 0xff, 0x00);		/* page 0 */
 	for (i = 0; i < 10; i++) {
 		v = max[i];
-		v += (sd->brightness->val - sd->brightness->maximum)
-			* 150 / sd->brightness->maximum; /* 200 ? */
-		v -= delta[i] * sd->contrast->val / sd->contrast->maximum;
+		v += (sd->brightness->val - (s32)sd->brightness->maximum)
+			* 150 / (s32)sd->brightness->maximum; /* 200 ? */
+		v -= delta[i] * sd->contrast->val / (s32)sd->contrast->maximum;
 		if (v < 0)
 			v = 0;
 		else if (v > 0xff)
@@ -420,7 +414,7 @@ static void setcolors(struct gspca_dev *gspca_dev)
 	reg_w(gspca_dev, 0x11, 0x01);
 	reg_w(gspca_dev, 0xff, 0x00);			/* page 0 */
 	for (i = 0; i < 9; i++) {
-		v = a[i] * sd->saturation->val / sd->saturation->maximum;
+		v = a[i] * sd->saturation->val / (s32)sd->saturation->maximum;
 		v += b[i];
 		reg_w(gspca_dev, 0x0f + 2 * i, (v >> 8) & 0x07);
 		reg_w(gspca_dev, 0x0f + 2 * i + 1, v);
@@ -849,8 +843,7 @@ static int sd_dbg_s_register(struct gspca_dev *gspca_dev,
 	 * reg->reg: bit0..15: reserved for register index (wIndex is 16bit
 	 *		       long on the USB bus)
 	 */
-	if (reg->match.type == V4L2_CHIP_MATCH_HOST &&
-	    reg->match.addr == 0 &&
+	if (reg->match.addr == 0 &&
 	    (reg->reg < 0x000000ff) &&
 	    (reg->val <= 0x000000ff)
 	) {
@@ -871,26 +864,12 @@ static int sd_dbg_s_register(struct gspca_dev *gspca_dev,
 	}
 	return gspca_dev->usb_err;
 }
-
-static int sd_chip_ident(struct gspca_dev *gspca_dev,
-			struct v4l2_dbg_chip_ident *chip)
-{
-	int ret = -EINVAL;
-
-	if (chip->match.type == V4L2_CHIP_MATCH_HOST &&
-	    chip->match.addr == 0) {
-		chip->revision = 0;
-		chip->ident = V4L2_IDENT_UNKNOWN;
-		ret = 0;
-	}
-	return ret;
-}
 #endif
 
 #if IS_ENABLED(CONFIG_INPUT)
 static int sd_int_pkt_scan(struct gspca_dev *gspca_dev,
 			u8 *data,		/* interrupt packet data */
-			int len)		/* interrput packet length */
+			int len)		/* interrupt packet length */
 {
 	int ret = -EINVAL;
 	u8 data0, data1;
@@ -931,7 +910,6 @@ static const struct sd_desc sd_desc = {
 	.dq_callback = do_autogain,
 #ifdef CONFIG_VIDEO_ADV_DEBUG
 	.set_register = sd_dbg_s_register,
-	.get_chip_ident = sd_chip_ident,
 #endif
 #if IS_ENABLED(CONFIG_INPUT)
 	.int_pkt_scan = sd_int_pkt_scan,

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef BOARD_BCM963XX_H_
 #define BOARD_BCM963XX_H_
 
@@ -24,6 +25,7 @@ struct board_info {
 	/* enabled feature/device */
 	unsigned int	has_enet0:1;
 	unsigned int	has_enet1:1;
+	unsigned int	has_enetsw:1;
 	unsigned int	has_pci:1;
 	unsigned int	has_pccard:1;
 	unsigned int	has_ohci0:1;
@@ -36,6 +38,7 @@ struct board_info {
 	/* ethernet config */
 	struct bcm63xx_enet_platform_data enet0;
 	struct bcm63xx_enet_platform_data enet1;
+	struct bcm63xx_enetsw_platform_data enetsw;
 
 	/* USB config */
 	struct bcm63xx_usbd_platform_data usbd;
@@ -45,6 +48,12 @@ struct board_info {
 
 	/* GPIO LEDs */
 	struct gpio_led leds[5];
+
+	/* External PHY reset GPIO */
+	unsigned int ephy_reset_gpio;
+
+	/* External PHY reset GPIO flags from gpio.h */
+	unsigned long ephy_reset_gpio_flags;
 };
 
 #endif /* ! BOARD_BCM963XX_H_ */

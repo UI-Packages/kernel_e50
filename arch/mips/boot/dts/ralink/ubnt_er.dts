@@ -1,0 +1,100 @@
+#include "mt7621.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	compatible = "ubiquiti,edgerouter";
+	model = "Ubiquiti EdgeRouter";
+
+	gpio-keys-polled {
+		compatible = "gpio-keys-polled";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		poll-interval = <20>;
+
+		reset {
+			label = "reset";
+			gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
+		};
+	};
+
+	leds: leds {};
+
+};
+
+&xhci {
+	status = "disabled";
+};
+
+&sdhci {
+	status = "disabled";
+};
+
+&pcie {
+	status = "disabled";
+};
+
+&ethernet {
+	mtd-mac-address = <&factory 0x22>;
+};
+
+&nand {
+	status = "okay";
+
+	partition@0 {
+		label = "ALL";
+		reg = <0x0 0x0>;
+		read-only;
+	};
+	partition@1 {
+		label = "ALL";
+		reg = <0x0 0x0>;
+		read-only;
+	};
+	partition@2 {
+		label = "Bootloader";
+		reg = <0x0 0x80000>;
+	};
+
+	partition@80000 {
+		label = "Config";
+		reg = <0x80000 0x60000>;
+		read-only;
+	};
+
+	factory: partition@e0000 {
+		label = "eeprom";
+		reg = <0xe0000 0x60000>;
+	};
+
+	partition@140000 {
+		label = "Kernel1";
+		reg = <0x140000 0x300000>;
+	};
+
+	partition@440000 {
+		label = "Kernel2";
+		reg = <0x440000 0x300000>;
+	};
+
+	partition@740000 {
+		label = "RootFS";
+		reg = <0x740000 0xf7c0000>;
+	};
+};
+
+&pinctrl {
+	state_default: pinctrl0 {
+		gpio {
+			ralink,group = "uart2", "uart3", "rgmii2", "sdhci";
+			ralink,function = "gpio";
+		};
+	};
+};
+
+&i2c {
+	status = "okay";
+};
+

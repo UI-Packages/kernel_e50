@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Generate definitions needed by assembly language modules.
  * This code generates raw asm output which is post-processed
@@ -22,13 +23,11 @@ void foo(void)
 	BLANK();
 
 	OFFSET(TI_task,			thread_info, task);
-	OFFSET(TI_exec_domain,		thread_info, exec_domain);
 	OFFSET(TI_frame,		thread_info, frame);
 	OFFSET(TI_flags,		thread_info, flags);
 	OFFSET(TI_cpu,			thread_info, cpu);
 	OFFSET(TI_preempt_count,	thread_info, preempt_count);
 	OFFSET(TI_addr_limit,		thread_info, addr_limit);
-	OFFSET(TI_restart_block,	thread_info, restart_block);
 	BLANK();
 
 	OFFSET(REG_D0,			pt_regs, d0);
@@ -86,7 +85,6 @@ void foo(void)
 	DEFINE(SIGCHLD_asm,		SIGCHLD);
 	BLANK();
 
-	OFFSET(EXEC_DOMAIN_handler,	exec_domain, handler);
 	OFFSET(RT_SIGFRAME_sigcontext,	rt_sigframe, uc.uc_mcontext);
 
 	DEFINE(PAGE_SIZE_asm,		PAGE_SIZE);

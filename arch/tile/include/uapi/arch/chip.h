@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright 2010 Tilera Corporation. All Rights Reserved.
  *
@@ -12,9 +13,7 @@
  *   more details.
  */
 
-#if __tile_chip__ == 0
-#include <arch/chip_tile64.h>
-#elif __tile_chip__ == 1
+#if __tile_chip__ == 1
 #include <arch/chip_tilepro.h>
 #elif defined(__tilegx__)
 #include <arch/chip_tilegx.h>

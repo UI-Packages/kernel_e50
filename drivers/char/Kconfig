@@ -1,285 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Character device configuration
 #
 
 menu "Character devices"
 
-config RALINK_GPIO
-	bool "Ralink GPIO Support"
-	default y
-
-config RALINK_GPIO_LED
-	bool "Ralink GPIO LED Support"
-	depends on RALINK_GPIO
-	default y
-	
-config RALINK_HSDMA
-  tristate "Ralink HSDMA Support"
-  depends on RALINK_MT7621
-	default n
-
-config RALINK_GDMA
-	tristate "Ralink GDMA Support"
-	default n
-choice
-        prompt "GDMA Channel Allocation Mode"
-	depends on RALINK_GDMA
-	default GDMA_EVERYBODY
-
-	config GDMA_PCM_ONLY
-	        bool "PCM/Others"
-		---help---
-		   RT305x/RT3350/RT2883=>Ch0-Ch7:PCM0/PCM1 
-		   RT3352/RT5350/RT3883/RT6855=>Ch0-Ch7:PCM0/PCM1, Ch8-Ch15:others
-	
-	config GDMA_PCM_I2S_OTHERS
-	        bool "PCM/I2S/Others"
-		---help---
-		   RT305x/RT3350/RT2883=>4Ch:PCM0 / 2Ch:I2S / 2Ch:Others
-		   RT3352/RT5350/RT3883/RT6855=>4Ch:PCM0 / 2Ch:I2S_Tx / 2Ch:I2S_Rx / 8Ch:Others
-
-	config GDMA_EVERYBODY
-	        bool "All for Everybody"
-	
-	config GDMA_DEBUG
-	        bool "Debug Mode 0->1..7->0->1..7.."
-endchoice
-
-config RALINK_SPI
-	tristate "Ralink RT2880 SPI Support"
-	default n
-
-config RALINK_SPI_CS0_HIGH_ACTIVE
-	depends on RALINK_SPI
-	bool "SPI CS0(Chip Select) is high active"
-	default n
-	
-config RALINK_SPI_CS1_HIGH_ACTIVE
-	depends on RALINK_SPI
-	depends on RALINK_RT3883 || RALINK_RT3352 || RALINK_RT5350 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7621 || RALINK_MT7628
-	bool "SPI CS1(Chip Select) is high active"
-	default n
-
-config RALINK_VITESSE_SWITCH_CONNECT_SPI_CS1
-	depends on RALINK_SPI
-	depends on RALINK_RT3883 || RALINK_RT3352 || RALINK_RT5350 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7621 || RALINK_MT7628
-	bool "Vitess Switch CS Pin Connects to SPI CS1"
-	default n
-
-config RALINK_SLIC_CONNECT_SPI_CS1
-        depends on RALINK_SPI
-	depends on RALINK_RT3883 || RALINK_RT3352 || RALINK_RT5350 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7621 || RALINK_MT7628
-        bool "SLIC CS Pin Connects to SPI CS1"
-	default n	
-	
-config RALINK_I2C
-	tristate "Ralink RT2880 I2C Support"
-	default n
-
-config MTK_NFC_SUPPORT
-        depends on RALINK_I2C
-        depends on RALINK_RT3883 || RALINK_MT7621
-        bool "NFC Support"
-        default n
-
-config MTK_NFC_MT6605_SIM
-	depends on MTK_NFC_SUPPORT
-	bool "MT6605 NFC Simulation"
-	default n
-
-config RALINK_PCM
-	tristate "Ralink PCM Support"
-	default n
-
-config RALINK_PCM_SPICH
-	int "PCM use SPI CH"
-	depends on RALINK_PCM
-	range 0 1
-	default "1"
-	---help---
-	PCM use SPI channel number.
-config RALINK_PCMRST_GPIO
-        int "PCM SLIC Reset pin map to GPIO Number"
-        depends on RALINK_PCM
-        range 0 95
-        default "0"
-        ---help---
-        Apply a gpio pin for SLIC RST.
-
-config RALINK_PCMCHNUM
-	int "PCM Total Channel Number Supported"
-	depends on RALINK_PCM
-	range 1 4
-	default "2"
-	---help---
-	Input PCM total channel number that we want to support. 
-
-
-config RALINK_PCMEXTCLK
-        bool "PCM Clock Dividor Source From external OSC"
-	depends on RALINK_PCM
-	depends on RALINK_RT3052
-	default n
-	---help---
-	Select PCM clock dividor source from SoC internal or external OSC.
-
-config RALINK_PCMDIV
-	int "PCM Clock Dividor Value"
-	depends on RALINK_PCM
-	depends on RALINK_RT3052
-	range 0 63
-	default "60"
-	---help---
-	Set PCM clock dividor value based on SoC internal clock (15.625Mhz) or external OSC (eg. 12.288Mhz).
-
-config RALINK_PCMINTDIV
-        int "PCM Clock Dividor Interger Part Value"
-        depends on RALINK_PCM
-        depends on RALINK_RT3352 || RALINK_RT5350 || RALINK_RT3883 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7628
-	range 0 1024
-	default "117"
-	---help---
-	Set PCM clock dividor interger part value based on SoC internal clock.
-
-
-config RALINK_PCMCOMPDIV
-        int "PCM Clock Dividor Fraction Part Value"
-	depends on RALINK_PCM
-	depends on RALINK_RT3352 || RALINK_RT5350 || RALINK_RT3883 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7628
-	range 0 512
-	default "48"
-	---help---
-	Set PCM clock dividor fraction part value based on SoC internal clock.
-
-config RALINK_PCMSLOTMODE
-	int "PCM slot mode"
-	depends on RALINK_PCM
-	range 0 5
-	default "3"
-	---help---
-	PCM slot mode : 0 for 4 slots, 1 for 8 slots, 2 for 16 slots, 3 for 32 slots, 4 for 64 slots, and 5 for 128 slots.
-
-choice 
-	prompt "UARTF_SHARE_MODE Setting"
-	depends on RALINK_PCM
-	default RALINK_PCMGPIO
-	
-	config RALINK_PCMGPIO
-		bool "PCM+GPIO mode"
-	config RALINK_PCMUARTF
-		bool "PCM+UARTF mode"
-	config RALINK_PCMI2S
-		bool "PCM+I2S mode"
-endchoice
-config RALINK_I2S
-	tristate "Ralink I2S Support"
-	select RALINK_I2C
-	select RALINK_GDMA
-	default n
-
-config I2S_IN_CLK
-        bool "Use Internal Reference Clock"
-	depends on RALINK_I2S
-	depends on RALINK_RT3052
-	default n
-
-config I2S_MS_MODE
-        bool "Ralink SoC as I2S Master Device"
-	depends on RALINK_I2S
-        depends on RALINK_RT3352 || RALINK_RT5350 || RALINK_RT6855
-	default n
-choice
-	prompt "Audio Code Selection"
-	depends on RALINK_I2S
-	depends on RALINK_RT3883 || RALINK_RT3352 || RALINK_RT5350 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7621 || RALINK_MT7628
-	default I2S_WM8960
-
-	config I2S_WM8750
-		bool "Select WM8750"
-	config I2S_WM8960
-		bool "Select WM8960"
-	config I2S_192KHZ_CODEC
-		bool "Select 192KHz codec (WM8524 for Tx; WM8782 for RX)"
-		depends on RALINK_MT7628
-endchoice
-
-config I2S_WM8751
-	bool "Select Audio Codec WM8751  -- Support TX only"
-	depends on RALINK_I2S
-	depends on RALINK_RT3052 || RALINK_RT2883 || RALINK_RT3350
-	default y
-
-config I2S_IN_MCLK
-	bool "Use Internal REFCLK As MCLK Source"
-	depends on RALINK_I2S
-	depends on RALINK_RT3352 || RALINK_RT5350 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7621 || RALINK_MT7628
-	depends on !I2S_192KHZ_CODEC
-	default y
-
-choice
-	prompt	"Selection For MCLK"
-	depends on RALINK_I2S
-	
-	config I2S_MCLK_12MHZ
-		bool "Select 12MHz Internal REFCLK"
-		depends on RALINK_RT3352 || RALINK_RT5350 || RALINK_RT6855 || RALINK_MT7620 || RALINK_MT7628 || RALINK_MT7621
-		depends on I2S_IN_MCLK
-		depends on !I2S_192KHZ_CODEC
-
-#	config I2S_MCLK_12P288MHZ
-#		bool "Select 12.288MHz/11.289MHz Internal REFCLK as MCLK"
-#		depends on RALINK_MT7621
-#		depends on I2S_IN_MCLK
-#		depends on !I2S_192KHZ_CODEC
-
-	config I2S_MCLK_12MHZ
-		bool "Select 12MHz External Xtal"
-		depends on RALINK_I2S
-		depends on !I2S_IN_MCLK
-		depends on !I2S_192KHZ_CODEC
-
-	config I2S_MCLK_12P288MHZ
-		bool "Select 12.288MHz External Xtal"
-		depends on RALINK_I2S
-		depends on !I2S_IN_MCLK
-		depends on !I2S_192KHZ_CODEC
-
-	config I2S_MCLK_24P576MHZ
-		bool "Select 24.576MHz External Xtal"
-		depends on RALINK_I2S
-		depends on !I2S_IN_MCLK
-		depends on I2S_192KHZ_CODEC
-
-endchoice
-
-
-config RALINK_SPDIF
-        tristate "Ralink SPDIF Support"
-        depends on RALINK_MT7621
-        default n
-
 source "drivers/tty/Kconfig"
+
+config DEVMEM
+	bool "/dev/mem virtual device support"
+	default y
+	help
+	  Say Y here if you want to support the /dev/mem device.
+	  The /dev/mem device is used to access areas of physical
+	  memory.
+	  When in doubt, say "Y".
 
 config DEVKMEM
 	bool "/dev/kmem virtual device support"
-	default y
+	# On arm64, VMALLOC_START < PAGE_OFFSET, which confuses kmem read/write
+	depends on !ARM64
 	help
 	  Say Y here if you want to support the /dev/kmem device. The
 	  /dev/kmem device is rarely used, but can be used for certain
 	  kind of kernel debugging operations.
 	  When in doubt, say "N".
-
-config STALDRV
-	bool "Stallion multiport serial support"
-	depends on SERIAL_NONSTANDARD
-	help
-	  Stallion cards give you many serial ports.  You would need something
-	  like this to connect more than two modems to your Linux box, for
-	  instance in order to become a dial-in server.  If you say Y here,
-	  you will be asked for your specific card model in the next
-	  questions.  Make sure to read <file:Documentation/serial/stallion.txt>
-	  in this case.  If you have never heard about all this, it's safe to
-	  say N.
 
 config SGI_SNSC
 	bool "SGI Altix system controller communication support"
@@ -304,9 +49,10 @@ config SGI_MBCS
          say Y or M here, otherwise say N.
 
 source "drivers/tty/serial/Kconfig"
+source "drivers/tty/serdev/Kconfig"
 
 config TTY_PRINTK
-	bool "TTY driver to output user messages via printk"
+	tristate "TTY driver to output user messages via printk"
 	depends on EXPERT && TTY
 	default n
 	---help---
@@ -416,7 +162,7 @@ config VIRTIO_CONSOLE
 	depends on VIRTIO && TTY
 	select HVC_DRIVER
 	help
-	  Virtio console for use with lguest and other hypervisors.
+	  Virtio console for use with hypervisors.
 
 	  Also serves as a general-purpose serial device for data
 	  transfer between the guest and host.  Character devices at
@@ -434,6 +180,20 @@ config IBM_BSR
 	  This devices exposes a hardware mechanism for fast synchronization
 	  of threads across a large system which avoids bouncing a cacheline
 	  between several cores on a system
+
+config POWERNV_OP_PANEL
+	tristate "IBM POWERNV Operator Panel Display support"
+	depends on PPC_POWERNV
+	default m
+	help
+	  If you say Y here, a special character device node, /dev/op_panel,
+	  will be created which exposes the operator panel display on IBM
+	  Power Systems machines with FSPs.
+
+	  If you don't require access to the operator panel display from user
+	  space, say N.
+
+	  If unsure, say M here to build it as a module called powernv-op-panel.
 
 source "drivers/char/ipmi/Kconfig"
 
@@ -536,8 +296,7 @@ if RTC_LIB=n
 
 config RTC
 	tristate "Enhanced Real Time Clock Support (legacy PC RTC driver)"
-	depends on !PPC && !PARISC && !IA64 && !M68K && !SPARC && !FRV \
-			&& !ARM && !SUPERH && !S390 && !AVR32 && !BLACKFIN && !UML
+	depends on ALPHA || (MIPS && MACH_LOONGSON64)
 	---help---
 	  If you say Y here and create a character special file /dev/rtc with
 	  major number 10 and minor number 135 using mknod ("man mknod"), you
@@ -582,31 +341,6 @@ config JS_RTC
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called js-rtc.
-
-config GEN_RTC
-	tristate "Generic /dev/rtc emulation"
-	depends on RTC!=y && !IA64 && !ARM && !M32R && !MIPS && !SPARC && !FRV && !S390 && !SUPERH && !AVR32 && !BLACKFIN && !UML
-	---help---
-	  If you say Y here and create a character special file /dev/rtc with
-	  major number 10 and minor number 135 using mknod ("man mknod"), you
-	  will get access to the real time clock (or hardware clock) built
-	  into your computer.
-
-	  It reports status information via the file /proc/driver/rtc and its
-	  behaviour is set by various ioctls on /dev/rtc. If you enable the
-	  "extended RTC operation" below it will also provide an emulation
-	  for RTC_UIE which is required by some programs and may improve
-	  precision in some cases.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called genrtc.
-
-config GEN_RTC_X
-	bool "Extended RTC operation"
-	depends on GEN_RTC
-	help
-	  Provides an emulation for RTC_UIE which is required by some programs
-	  and may improve precision of the generic RTC support in some cases.
 
 config EFI_RTC
 	bool "EFI Real Time Clock Services"
@@ -674,7 +408,7 @@ config APPLICOM
 
 config SONYPI
 	tristate "Sony Vaio Programmable I/O Control Device support"
-	depends on X86 && PCI && INPUT && !64BIT
+	depends on X86_32 && PCI && INPUT
 	---help---
 	  This driver enables access to the Sony Programmable I/O Control
 	  Device which can be found in many (all ?) Sony Vaio laptops.
@@ -765,6 +499,7 @@ config RAW_DRIVER
 config MAX_RAW_DEVS
 	int "Maximum number of RAW devices to support (1-65536)"
 	depends on RAW_DRIVER
+	range 1 65536
 	default "256"
 	help
 	  The maximum number of RAW devices that are supported.
@@ -788,10 +523,16 @@ config HPET_MMAP
 	  If you say Y here, user applications will be able to mmap
 	  the HPET registers.
 
+config HPET_MMAP_DEFAULT
+	bool "Enable HPET MMAP access by default"
+	default y
+	depends on HPET_MMAP
+	help
 	  In some hardware implementations, the page containing HPET
 	  registers may also contain other things that shouldn't be
-	  exposed to the user.  If this applies to your hardware,
-	  say N here.
+	  exposed to the user.  This option selects the default (if
+	  kernel parameter hpet_mmap is not set) user access to the
+	  registers for applications that require it.
 
 config HANGCHECK_TIMER
 	tristate "Hangcheck timer"
@@ -800,14 +541,6 @@ config HANGCHECK_TIMER
 	  The hangcheck-timer module detects when the system has gone
 	  out to lunch past a certain margin.  It can reboot the system
 	  or merely print a warning.
-
-config MMTIMER
-	tristate "MMTIMER Memory mapped RTC for SGI Altix"
-	depends on IA64_GENERIC || IA64_SGI_SN2
-	default y
-	help
-	  The mmtimer device allows direct userspace access to the
-	  Altix system timer.
 
 config UV_MMTIMER
 	tristate "UV_MMTIMER Memory mapped RTC for SGI UV"
@@ -842,16 +575,8 @@ config DEVPORT
 
 source "drivers/s390/char/Kconfig"
 
-config MSM_SMD_PKT
-	bool "Enable device interface for some SMD packet ports"
-	default n
-	depends on MSM_SMD
-	help
-	  Enables userspace clients to read and write to some packet SMD
-	  ports via device interface for MSM chipset.
-
 config TILE_SROM
-	bool "Character-device access via hypervisor to the Tilera SPI ROM"
+	tristate "Character-device access via hypervisor to the Tilera SPI ROM"
 	depends on TILE
 	default y
 	---help---
@@ -860,6 +585,8 @@ config TILE_SROM
 	  in /dev/srom/.  The Tilera hypervisor makes the flash
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
+
+source "drivers/char/xillybus/Kconfig"
 
 endmenu
 

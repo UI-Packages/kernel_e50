@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_FIRMWARE_H
 #define _LINUX_FIRMWARE_H
 
@@ -45,10 +46,12 @@ int request_firmware_nowait(
 	struct module *module, bool uevent,
 	const char *name, struct device *device, gfp_t gfp, void *context,
 	void (*cont)(const struct firmware *fw, void *context));
+int request_firmware_direct(const struct firmware **fw, const char *name,
+			    struct device *device);
+int request_firmware_into_buf(const struct firmware **firmware_p,
+	const char *name, struct device *device, void *buf, size_t size);
 
 void release_firmware(const struct firmware *fw);
-int cache_firmware(const char *name);
-int uncache_firmware(const char *name);
 #else
 static inline int request_firmware(const struct firmware **fw,
 				   const char *name,
@@ -68,15 +71,18 @@ static inline void release_firmware(const struct firmware *fw)
 {
 }
 
-static inline int cache_firmware(const char *name)
-{
-	return -ENOENT;
-}
-
-static inline int uncache_firmware(const char *name)
+static inline int request_firmware_direct(const struct firmware **fw,
+					  const char *name,
+					  struct device *device)
 {
 	return -EINVAL;
 }
-#endif
 
+static inline int request_firmware_into_buf(const struct firmware **firmware_p,
+	const char *name, struct device *device, void *buf, size_t size)
+{
+	return -EINVAL;
+}
+
+#endif
 #endif

@@ -1,120 +1,164 @@
-#ifndef _XHCI_MTK_H
-#define _XHCI_MTK_H
+/*
+ * Copyright (c) 2015 MediaTek Inc.
+ * Author:
+ *  Zhigang.Wei <zhigang.wei@mediatek.com>
+ *  Chunfeng.Yun <chunfeng.yun@mediatek.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
-#include <linux/usb.h>
+#ifndef _XHCI_MTK_H_
+#define _XHCI_MTK_H_
+
 #include "xhci.h"
 
-#define SSUSB_U3_XHCI_BASE		0xBE1C0000
-#define SSUSB_U3_MAC_BASE		0xBE1C2400
-#define SSUSB_U3_SYS_BASE		0xBE1C2600
-#define SSUSB_U2_SYS_BASE		0xBE1C3400
-#define SSUB_SIF_SLV_TOP		0xBE1D0000
-#define SIFSLV_IPPC			(SSUB_SIF_SLV_TOP + 0x700)
+/**
+ * To simplify scheduler algorithm, set a upper limit for ESIT,
+ * if a synchromous ep's ESIT is larger than @XHCI_MTK_MAX_ESIT,
+ * round down to the limit value, that means allocating more
+ * bandwidth to it.
+ */
+#define XHCI_MTK_MAX_ESIT	64
 
-#define U3_PIPE_LATCH_SEL_ADD 		SSUSB_U3_MAC_BASE + 0x130
-#define U3_PIPE_LATCH_TX		0
-#define U3_PIPE_LATCH_RX		0
+/**
+ * struct mu3h_sch_bw_info: schedule information for bandwidth domain
+ *
+ * @bus_bw: array to keep track of bandwidth already used at each uframes
+ * @bw_ep_list: eps in the bandwidth domain
+ *
+ * treat a HS root port as a bandwidth domain, but treat a SS root port as
+ * two bandwidth domains, one for IN eps and another for OUT eps.
+ */
+struct mu3h_sch_bw_info {
+	u32 bus_bw[XHCI_MTK_MAX_ESIT];
+	struct list_head bw_ep_list;
+};
 
-#define U3_UX_EXIT_LFPS_TIMING_PAR	0xa0
-#define U3_REF_CK_PAR			0xb0
-#define U3_RX_UX_EXIT_LFPS_REF_OFFSET	8
-#define U3_RX_UX_EXIT_LFPS_REF		3
-#define	U3_REF_CK_VAL			10
+/**
+ * struct mu3h_sch_ep_info: schedule information for endpoint
+ *
+ * @esit: unit is 125us, equal to 2 << Interval field in ep-context
+ * @num_budget_microframes: number of continuous uframes
+ *		(@repeat==1) scheduled within the interval
+ * @bw_cost_per_microframe: bandwidth cost per microframe
+ * @endpoint: linked into bandwidth domain which it belongs to
+ * @ep: address of usb_host_endpoint struct
+ * @offset: which uframe of the interval that transfer should be
+ *		scheduled first time within the interval
+ * @repeat: the time gap between two uframes that transfers are
+ *		scheduled within a interval. in the simple algorithm, only
+ *		assign 0 or 1 to it; 0 means using only one uframe in a
+ *		interval, and 1 means using @num_budget_microframes
+ *		continuous uframes
+ * @pkts: number of packets to be transferred in the scheduled uframes
+ * @cs_count: number of CS that host will trigger
+ * @burst_mode: burst mode for scheduling. 0: normal burst mode,
+ *		distribute the bMaxBurst+1 packets for a single burst
+ *		according to @pkts and @repeat, repeate the burst multiple
+ *		times; 1: distribute the (bMaxBurst+1)*(Mult+1) packets
+ *		according to @pkts and @repeat. normal mode is used by
+ *		default
+ */
+struct mu3h_sch_ep_info {
+	u32 esit;
+	u32 num_budget_microframes;
+	u32 bw_cost_per_microframe;
+	struct list_head endpoint;
+	void *ep;
+	/*
+	 * mtk xHCI scheduling information put into reserved DWs
+	 * in ep context
+	 */
+	u32 offset;
+	u32 repeat;
+	u32 pkts;
+	u32 cs_count;
+	u32 burst_mode;
+};
 
-#define U3_TIMING_PULSE_CTRL		0xb4
-#define CNT_1US_VALUE			63 //62.5MHz:63, 70MHz:70, 80MHz:80, 100MHz:100, 125MHz:125
+#define MU3C_U3_PORT_MAX 4
+#define MU3C_U2_PORT_MAX 5
 
-#define USB20_TIMING_PARAMETER		0x40
-#define TIME_VALUE_1US			63 //62.5MHz:63, 80MHz:80, 100MHz:100, 125MHz:125
+/**
+ * struct mu3c_ippc_regs: MTK ssusb ip port control registers
+ * @ip_pw_ctr0~3: ip power and clock control registers
+ * @ip_pw_sts1~2: ip power and clock status registers
+ * @ip_xhci_cap: ip xHCI capability register
+ * @u3_ctrl_p[x]: ip usb3 port x control register, only low 4bytes are used
+ * @u2_ctrl_p[x]: ip usb2 port x control register, only low 4bytes are used
+ * @u2_phy_pll: usb2 phy pll control register
+ */
+struct mu3c_ippc_regs {
+	__le32 ip_pw_ctr0;
+	__le32 ip_pw_ctr1;
+	__le32 ip_pw_ctr2;
+	__le32 ip_pw_ctr3;
+	__le32 ip_pw_sts1;
+	__le32 ip_pw_sts2;
+	__le32 reserved0[3];
+	__le32 ip_xhci_cap;
+	__le32 reserved1[2];
+	__le64 u3_ctrl_p[MU3C_U3_PORT_MAX];
+	__le64 u2_ctrl_p[MU3C_U2_PORT_MAX];
+	__le32 reserved2;
+	__le32 u2_phy_pll;
+	__le32 reserved3[33]; /* 0x80 ~ 0xff */
+};
 
-#define LINK_PM_TIMER			0x8
-#define PM_LC_TIMEOUT_VALUE		3
+struct xhci_hcd_mtk {
+	struct device *dev;
+	struct usb_hcd *hcd;
+	struct mu3h_sch_bw_info *sch_array;
+	struct mu3c_ippc_regs __iomem *ippc_regs;
+	bool has_ippc;
+	int num_u2_ports;
+	int num_u3_ports;
+	struct regulator *vusb33;
+	struct regulator *vbus;
+	struct clk *sys_clk;	/* sys and mac clock */
+	struct clk *ref_clk;
+	struct clk *wk_deb_p0;	/* port0's wakeup debounce clock */
+	struct clk *wk_deb_p1;
+	struct regmap *pericfg;
+	struct phy **phys;
+	int num_phys;
+	int wakeup_src;
+	bool lpm_support;
+};
 
-#define XHCI_IMOD			0x624
-#define XHCI_IMOD_MT7621_VALUE		0x10
-
-#define SSUSB_HDMA_CFG			0x950
-#define SSUSB_HDMA_CFG_MT7621_VALUE	0x10E0E0C
-
-#define U3_LTSSM_TIMING_PARAMETER3		0x2514
-#define U3_LTSSM_TIMING_PARAMETER3_VALUE	0x3E8012C
-
-#define U2_PHYD_CR1			0x64
-
-#define SSUSB_IP_SPAR0			0xC8
-
-#define SYNC_HS_EOF			0x938
-#define SYNC_HS_EOF_VALUE		0x201F3
-
-#define HSCH_CFG1			0x960
-#define SCH2_FIFO_DEPTH_OFFSET		16
-
-
-#define SSUSB_IP_PW_CTRL		(SIFSLV_IPPC+0x0)
-#define SSUSB_IP_SW_RST			(1<<0)
-#define SSUSB_IP_PW_CTRL_1		(SIFSLV_IPPC+0x4)
-#define SSUSB_IP_PDN			(1<<0)
-#define SSUSB_U3_CTRL(p)		(SIFSLV_IPPC+0x30+(p*0x08))
-#define SSUSB_U3_PORT_DIS		(1<<0)
-#define SSUSB_U3_PORT_PDN		(1<<1)
-#define SSUSB_U3_PORT_HOST_SEL		(1<<2)
-#define SSUSB_U3_PORT_CKBG_EN		(1<<3)
-#define SSUSB_U3_PORT_MAC_RST		(1<<4)
-#define SSUSB_U3_PORT_PHYD_RST		(1<<5)
-#define SSUSB_U2_CTRL(p)		(SIFSLV_IPPC+(0x50)+(p*0x08))
-#define SSUSB_U2_PORT_DIS		(1<<0)
-#define SSUSB_U2_PORT_PDN		(1<<1)
-#define SSUSB_U2_PORT_HOST_SEL		(1<<2)
-#define SSUSB_U2_PORT_CKBG_EN		(1<<3)
-#define SSUSB_U2_PORT_MAC_RST		(1<<4)
-#define SSUSB_U2_PORT_PHYD_RST		(1<<5)
-#define SSUSB_IP_CAP			(SIFSLV_IPPC+0x024)
-
-#define SSUSB_U3_PORT_NUM(p)		(p & 0xff)
-#define SSUSB_U2_PORT_NUM(p)		((p>>8) & 0xff)
-
-
-#define XHCI_MTK_TEST_MAJOR		234
-#define DEVICE_NAME			"xhci_mtk_test"
-
-#define CLI_MAGIC			'CLI'
-#define IOCTL_READ			_IOR(CLI_MAGIC, 0, int)
-#define IOCTL_WRITE			_IOW(CLI_MAGIC, 1, int)
-
-void reinitIP(void);
-void setInitialReg(void);
-void dbg_prb_out(void);
-int call_function(char *buf);
-
-long xhci_mtk_test_unlock_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
-int xhci_mtk_test_open(struct inode *inode, struct file *file);
-int xhci_mtk_test_release(struct inode *inode, struct file *file);
-ssize_t xhci_mtk_test_read(struct file *file, char *buf, size_t count, loff_t *ptr);
-ssize_t xhci_mtk_test_write(struct file *file, const char *buf, size_t count, loff_t * ppos);
-
-/*
-  mediatek probe out
-*/
-/************************************************************************************/
-
-#define SW_PRB_OUT_ADDR		(SIFSLV_IPPC+0xc0)
-#define PRB_MODULE_SEL_ADDR	(SIFSLV_IPPC+0xbc)
-
-static inline void mtk_probe_init(const u32 byte){
-	__u32 __iomem *ptr = (__u32 __iomem *) PRB_MODULE_SEL_ADDR;
-	writel(byte, ptr);
+static inline struct xhci_hcd_mtk *hcd_to_mtk(struct usb_hcd *hcd)
+{
+	return dev_get_drvdata(hcd->self.controller);
 }
 
-static inline void mtk_probe_out(const u32 value){
-	__u32 __iomem *ptr = (__u32 __iomem *) SW_PRB_OUT_ADDR;
-	writel(value, ptr);
+#if IS_ENABLED(CONFIG_USB_XHCI_MTK)
+int xhci_mtk_sch_init(struct xhci_hcd_mtk *mtk);
+void xhci_mtk_sch_exit(struct xhci_hcd_mtk *mtk);
+int xhci_mtk_add_ep_quirk(struct usb_hcd *hcd, struct usb_device *udev,
+		struct usb_host_endpoint *ep);
+void xhci_mtk_drop_ep_quirk(struct usb_hcd *hcd, struct usb_device *udev,
+		struct usb_host_endpoint *ep);
+
+#else
+static inline int xhci_mtk_add_ep_quirk(struct usb_hcd *hcd,
+	struct usb_device *udev, struct usb_host_endpoint *ep)
+{
+	return 0;
 }
 
-static inline u32 mtk_probe_value(void){
-	__u32 __iomem *ptr = (__u32 __iomem *) SW_PRB_OUT_ADDR;
-
-	return readl(ptr);
+static inline void xhci_mtk_drop_ep_quirk(struct usb_hcd *hcd,
+	struct usb_device *udev, struct usb_host_endpoint *ep)
+{
 }
-
 
 #endif
+
+#endif		/* _XHCI_MTK_H_ */

@@ -9,6 +9,8 @@
 #ifndef _ARC_KPROBES_H
 #define _ARC_KPROBES_H
 
+#include <asm-generic/kprobes.h>
+
 #ifdef CONFIG_KPROBES
 
 typedef u16 kprobe_opcode_t;
@@ -50,13 +52,9 @@ struct kprobe_ctlblk {
 
 int kprobe_fault_handler(struct pt_regs *regs, unsigned long cause);
 void kretprobe_trampoline(void);
-void trap_is_kprobe(unsigned long cause, unsigned long address,
-			   struct pt_regs *regs);
+void trap_is_kprobe(unsigned long address, struct pt_regs *regs);
 #else
-static void trap_is_kprobe(unsigned long cause, unsigned long address,
-			   struct pt_regs *regs)
-{
-}
-#endif
+#define trap_is_kprobe(address, regs)
+#endif /* CONFIG_KPROBES */
 
-#endif
+#endif /* _ARC_KPROBES_H */

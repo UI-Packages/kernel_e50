@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_SMP_H
 #define __ASM_SMP_H
 
@@ -7,13 +8,11 @@
 
 enum ipi_msg_type {
 	IPI_CALL_FUNC,
-	IPI_CALL_FUNC_SINGLE,
 	IPI_RESCHEDULE,
 };
 
 extern void arch_send_call_function_single_ipi(int cpu);
 extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
-#define arch_send_call_function_ipi_mask arch_send_call_function_ipi_mask
 
 asmlinkage void secondary_start_kernel(void);
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Suspend support specific for s390.
  *
@@ -9,9 +10,12 @@
 #include <linux/pfn.h>
 #include <linux/suspend.h>
 #include <linux/mm.h>
-#include <asm/sections.h>
+#include <linux/pci.h>
 #include <asm/ctl_reg.h>
 #include <asm/ipl.h>
+#include <asm/cio.h>
+#include <asm/sections.h>
+#include "entry.h"
 
 /*
  * The restore of the saved pages in an hibernation image will set
@@ -95,10 +99,16 @@ int page_key_alloc(unsigned long pages)
  */
 void page_key_read(unsigned long *pfn)
 {
+	struct page *page;
 	unsigned long addr;
+	unsigned char key;
 
-	addr = (unsigned long) page_address(pfn_to_page(*pfn));
-	*(unsigned char *) pfn = (unsigned char) page_get_storage_key(addr);
+	page = pfn_to_page(*pfn);
+	addr = (unsigned long) page_address(page);
+	key = (unsigned char) page_get_storage_key(addr) & 0x7f;
+	if (arch_test_page_nodat(page))
+		key |= 0x80;
+	*(unsigned char *) pfn = key;
 }
 
 /*
@@ -123,8 +133,16 @@ void page_key_memorize(unsigned long *pfn)
  */
 void page_key_write(void *address)
 {
-	page_set_storage_key((unsigned long) address,
-			     page_key_rp->data[page_key_rx], 0);
+	struct page *page;
+	unsigned char key;
+
+	key = page_key_rp->data[page_key_rx];
+	page_set_storage_key((unsigned long) address, key & 0x7f, 0);
+	page = virt_to_page(address);
+	if (key & 0x80)
+		arch_set_page_nodat(page, 0);
+	else
+		arch_set_page_dat(page, 0);
 	if (++page_key_rx >= PAGE_KEY_DATA_SIZE)
 		return;
 	page_key_rp = page_key_rp->next;
@@ -211,4 +229,12 @@ void restore_processor_state(void)
 	/* Enable lowcore protection */
 	__ctl_set_bit(0,28);
 	local_mcck_enable();
+}
+
+/* Called at the end of swsusp_arch_resume */
+void s390_early_resume(void)
+{
+	lgr_info_log();
+	channel_subsystem_reinit();
+	zpci_rescan();
 }

@@ -1,40 +1,30 @@
-###############################################################################
-#  Jan 2007 Bruce Chang
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 2 as published
+# by the Free Software Foundation.#
+# Makefile for the Ralink common stuff
 #
-#  Initial Release
-#
-#
-#
-###############################################################################
+# Copyright (C) 2009-2011 Gabor Juhos <juhosg@openwrt.org>
+# Copyright (C) 2013 John Crispin <john@phrozen.org>
 
+obj-y := prom.o of.o reset.o
 
-.S.s:
-	$(CPP) $(CFLAGS) $< -o $*.s
-.S.o:
-	$(CC) $(CFLAGS) -c $< -o $*.o
-
-obj-y    := reset.o init.o irq.o \
-            memory.o printf.o cmdline.o setup.o time.o
-
-ifeq ($(CONFIG_MIPS_MT_SMP),y)
-	obj-y += malta-amon.o
+ifndef CONFIG_MIPS_GIC
+	obj-y += clk.o timer.o
 endif
 
-obj-$(CONFIG_KERNEL_NVRAM) += nvram.o
-obj-$(CONFIG_PCI) += pci.o
-obj-$(CONFIG_DWC_OTG) += lm.o
-obj-$(CONFIG_RALINK_TIMER_WDG) +=  ralink_wdt.o
-obj-$(CONFIG_RALINK_TIMER_DFS) +=  rt_timer.o
-obj-$(CONFIG_RT_DMA) +=  dev-dma.o
-obj-$(CONFIG_MTK_MTD_NAND) +=  dev-nand.o
-ifeq ($(CONFIG_RALINK_MT7621),y)
-obj-$(CONFIG_MTD_ANY_RALINK) +=  dev-nand.o
-endif
-#obj-$(CONFIG_I2C_RALINK) +=  dev-i2c.o
+obj-$(CONFIG_CLKEVT_RT3352) += cevt-rt3352.o
 
-obj-$(CONFIG_RALINK_RT3883) +=  ehci_ohci.o udc.o
-obj-$(CONFIG_RALINK_RT3352) +=  ehci_ohci.o udc.o
-obj-$(CONFIG_RALINK_RT5350) +=  ehci_ohci.o udc.o
-obj-$(CONFIG_RALINK_RT6855) +=  ehci_ohci.o udc.o
-obj-$(CONFIG_RALINK_MT7620) +=  ehci_ohci.o udc.o
-obj-$(CONFIG_RALINK_MT7628) +=  ehci_ohci.o udc.o
+obj-$(CONFIG_RALINK_ILL_ACC) += ill_acc.o
+
+obj-$(CONFIG_IRQ_INTC) += irq.o
+obj-$(CONFIG_MIPS_GIC) += irq-gic.o timer-gic.o
+
+obj-$(CONFIG_SOC_RT288X) += rt288x.o
+obj-$(CONFIG_SOC_RT305X) += rt305x.o
+obj-$(CONFIG_SOC_RT3883) += rt3883.o
+obj-$(CONFIG_SOC_MT7620) += mt7620.o
+obj-$(CONFIG_SOC_MT7621) += mt7621.o
+
+obj-$(CONFIG_EARLY_PRINTK) += early_printk.o
+
+obj-$(CONFIG_DEBUG_FS) += bootrom.o

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright 2011 Tilera Corporation. All Rights Reserved.
  *
@@ -14,8 +15,6 @@
 
 #if defined (__BIG_ENDIAN__)
 #include <linux/byteorder/big_endian.h>
-#elif defined (__LITTLE_ENDIAN__)
-#include <linux/byteorder/little_endian.h>
 #else
-#error "__BIG_ENDIAN__ or __LITTLE_ENDIAN__ must be defined."
+#include <linux/byteorder/little_endian.h>
 #endif

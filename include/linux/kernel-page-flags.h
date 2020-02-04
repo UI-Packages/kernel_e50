@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_KERNEL_PAGE_FLAGS_H
 #define LINUX_KERNEL_PAGE_FLAGS_H
 
@@ -15,5 +16,6 @@
 #define KPF_OWNER_PRIVATE	37
 #define KPF_ARCH		38
 #define KPF_UNCACHED		39
+#define KPF_SOFTDIRTY		40
 
 #endif /* LINUX_KERNEL_PAGE_FLAGS_H */

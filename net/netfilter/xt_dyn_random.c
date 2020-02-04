@@ -61,7 +61,7 @@ static ssize_t _write_proc(struct file *file, const char __user *buf,
 	if (copy_from_user(tmp, buf, count))
 		return -EFAULT;
 
-	sticky_iv = net_random();
+	sticky_iv = prandom_u32();
 
 	p = simple_strtoul(tmp, NULL, 10);
 
@@ -95,7 +95,7 @@ static bool dyn_rand_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	const struct iphdr *iph;
 	const struct ipv6hdr *ip6h;
 
-	if (par->family == NFPROTO_IPV4) {
+	if (xt_family(par) == NFPROTO_IPV4) {
 		iph = ip_hdr(skb);
 		tproto = iph->protocol;
 	} else {
@@ -104,19 +104,19 @@ static bool dyn_rand_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	}
 
 	if (!sticky) {
-		hv = net_random();
+		hv = prandom_u32();
 		goto done;
 	}
 
 	if (sticky & STICKY_SADDR) {
-		if (par->family == NFPROTO_IPV4)
+		if (xt_family(par) == NFPROTO_IPV4)
 			hv = jhash(&(iph->saddr), sizeof(iph->saddr), hv);
 		else
 			hv = jhash(&(ip6h->saddr), sizeof(ip6h->saddr), hv);
 	}
 
 	if (sticky & STICKY_DADDR) {
-		if (par->family == NFPROTO_IPV4)
+		if (xt_family(par) == NFPROTO_IPV4)
 			hv = jhash(&(iph->daddr), sizeof(iph->daddr), hv);
 		else
 			hv = jhash(&(ip6h->daddr), sizeof(ip6h->daddr), hv);

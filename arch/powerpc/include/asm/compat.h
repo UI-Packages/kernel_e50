@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_POWERPC_COMPAT_H
 #define _ASM_POWERPC_COMPAT_H
 #ifdef __KERNEL__
@@ -109,7 +110,6 @@ struct compat_statfs {
 	int		f_spare[4];
 };
 
-#define COMPAT_RLIM_OLD_INFINITY	0x7fffffff
 #define COMPAT_RLIM_INFINITY		0xffffffff
 
 typedef u32		compat_old_sigset_t;
@@ -174,11 +174,17 @@ typedef struct compat_siginfo {
 			int _band;	/* POLL_IN, POLL_OUT, POLL_MSG */
 			int _fd;
 		} _sigpoll;
+
+		/* SIGSYS */
+		struct {
+			unsigned int _call_addr; /* calling insn */
+			int _syscall;		 /* triggering system call number */
+			unsigned int _arch;	 /* AUDIT_ARCH_* of syscall */
+		} _sigsys;
 	} _sifields;
 } compat_siginfo_t;
 
 #define COMPAT_OFF_T_MAX	0x7fffffff
-#define COMPAT_LOFF_T_MAX	0x7fffffffffffffffL
 
 /*
  * A pointer passed in from user mode. This should not
@@ -204,10 +210,11 @@ static inline void __user *arch_compat_alloc_user_space(long len)
 
 	/*
 	 * We can't access below the stack pointer in the 32bit ABI and
-	 * can access 288 bytes in the 64bit ABI
+	 * can access 288 bytes in the 64bit big-endian ABI,
+	 * or 512 bytes with the new ELFv2 little-endian ABI.
 	 */
 	if (!is_32bit_task())
-		usp -= 288;
+		usp -= USER_REDZONE_SIZE;
 
 	return (void __user *) (usp - len);
 }

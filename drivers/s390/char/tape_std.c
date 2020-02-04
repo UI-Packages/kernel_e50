@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *    standard tape device functions for ibm tapes.
  *
@@ -78,7 +79,8 @@ tape_std_assign(struct tape_device *device)
 
 	rc = tape_do_io_interruptible(device, request);
 
-	del_timer(&timeout);
+	del_timer_sync(&timeout);
+	destroy_timer_on_stack(&timeout);
 
 	if (rc != 0) {
 		DBF_EVENT(3, "%08x: assign failed - device might be busy\n",

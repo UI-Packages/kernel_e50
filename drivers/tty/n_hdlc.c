@@ -103,7 +103,7 @@
 #include <linux/bitops.h>
 
 #include <asm/termios.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 /*
  * Buffers for individual HDLC frames
@@ -651,7 +651,7 @@ static ssize_t n_hdlc_tty_write(struct tty_struct *tty, struct file *file,
 	struct n_hdlc_buf *tbuf;
 
 	if (debuglevel >= DEBUG_LEVEL_INFO)	
-		printk("%s(%d)n_hdlc_tty_write() called count=%Zd\n",
+		printk("%s(%d)n_hdlc_tty_write() called count=%zd\n",
 			__FILE__,__LINE__,count);
 		
 	/* Verify pointers */
@@ -836,12 +836,10 @@ static struct n_hdlc *n_hdlc_alloc(void)
 {
 	struct n_hdlc_buf *buf;
 	int i;
-	struct n_hdlc *n_hdlc = kmalloc(sizeof(*n_hdlc), GFP_KERNEL);
+	struct n_hdlc *n_hdlc = kzalloc(sizeof(*n_hdlc), GFP_KERNEL);
 
 	if (!n_hdlc)
 		return NULL;
-
-	memset(n_hdlc, 0, sizeof(*n_hdlc));
 
 	spin_lock_init(&n_hdlc->rx_free_buf_list.spinlock);
 	spin_lock_init(&n_hdlc->tx_free_buf_list.spinlock);
@@ -941,14 +939,12 @@ static struct n_hdlc_buf *n_hdlc_buf_get(struct n_hdlc_buf_list *buf_list)
 	return buf;
 }	/* end of n_hdlc_buf_get() */
 
-static char hdlc_banner[] __initdata =
+static const char hdlc_banner[] __initconst =
 	KERN_INFO "HDLC line discipline maxframe=%u\n";
-static char hdlc_register_ok[] __initdata =
+static const char hdlc_register_ok[] __initconst =
 	KERN_INFO "N_HDLC line discipline registered.\n";
-static char hdlc_register_fail[] __initdata =
+static const char hdlc_register_fail[] __initconst =
 	KERN_ERR "error registering line discipline: %d\n";
-static char hdlc_init_fail[] __initdata =
-	KERN_INFO "N_HDLC: init failure %d\n";
 
 static int __init n_hdlc_init(void)
 {
@@ -968,15 +964,13 @@ static int __init n_hdlc_init(void)
 	else
 		printk(hdlc_register_fail, status);
 
-	if (status)
-		printk(hdlc_init_fail, status);
 	return status;
 	
 }	/* end of init_module() */
 
-static char hdlc_unregister_ok[] __exitdata =
+static const char hdlc_unregister_ok[] __exitdata =
 	KERN_INFO "N_HDLC: line discipline unregistered\n";
-static char hdlc_unregister_fail[] __exitdata =
+static const char hdlc_unregister_fail[] __exitdata =
 	KERN_ERR "N_HDLC: can't unregister line discipline (err = %d)\n";
 
 static void __exit n_hdlc_exit(void)

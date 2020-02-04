@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #include <dvbdev.h>
 #include <dmxdev.h>
 #include <dvb_demux.h>
@@ -56,9 +57,3 @@ struct videobuf_dvb_frontend * videobuf_dvb_get_frontend(struct videobuf_dvb_fro
 int videobuf_dvb_find_frontend(struct videobuf_dvb_frontends *f, struct dvb_frontend *p);
 
 #endif			/* _VIDEOBUF_DVB_H_ */
-
-/*
- * Local variables:
- * c-basic-offset: 8
- * End:
- */

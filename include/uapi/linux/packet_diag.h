@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef __PACKET_DIAG_H__
 #define __PACKET_DIAG_H__
 
@@ -29,6 +30,7 @@ struct packet_diag_msg {
 };
 
 enum {
+	/* PACKET_DIAG_NONE, standard nl API requires this attribute!  */
 	PACKET_DIAG_INFO,
 	PACKET_DIAG_MCLIST,
 	PACKET_DIAG_RX_RING,

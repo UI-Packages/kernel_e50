@@ -173,8 +173,8 @@ static int bcm1480_pcibios_write(struct pci_bus *bus, unsigned int devfn,
 }
 
 struct pci_ops bcm1480_pci_ops = {
-	bcm1480_pcibios_read,
-	bcm1480_pcibios_write,
+	.read	= bcm1480_pcibios_read,
+	.write	= bcm1480_pcibios_write,
 };
 
 static struct resource bcm1480_mem_resource = {
@@ -258,7 +258,9 @@ static int __init bcm1480_pcibios_init(void)
 	register_pci_controller(&bcm1480_controller);
 
 #ifdef CONFIG_VGA_CONSOLE
-	take_over_console(&vga_con, 0, MAX_NR_CONSOLES-1, 1);
+	console_lock();
+	do_take_over_console(&vga_con, 0, MAX_NR_CONSOLES-1, 1);
+	console_unlock();
 #endif
 	return 0;
 }

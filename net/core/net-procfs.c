@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/netdevice.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -146,11 +147,24 @@ static void softnet_seq_stop(struct seq_file *seq, void *v)
 static int softnet_seq_show(struct seq_file *seq, void *v)
 {
 	struct softnet_data *sd = v;
+	unsigned int flow_limit_count = 0;
 
-	seq_printf(seq, "%08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+#ifdef CONFIG_NET_FLOW_LIMIT
+	struct sd_flow_limit *fl;
+
+	rcu_read_lock();
+	fl = rcu_dereference(sd->flow_limit);
+	if (fl)
+		flow_limit_count = fl->count;
+	rcu_read_unlock();
+#endif
+
+	seq_printf(seq,
+		   "%08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
 		   sd->processed, sd->dropped, sd->time_squeeze, 0,
 		   0, 0, 0, 0, /* was fastroute */
-		   sd->cpu_collision, sd->received_rps);
+		   0,	/* was cpu_collision */
+		   sd->received_rps, flow_limit_count);
 	return 0;
 }
 
@@ -306,10 +320,12 @@ static int __net_init dev_proc_net_init(struct net *net)
 
 	if (!proc_create("dev", S_IRUGO, net->proc_net, &dev_seq_fops))
 		goto out;
-	if (!proc_create("softnet_stat", S_IRUGO, net->proc_net,
+	if (!IS_ENABLED(CONFIG_PROC_STRIPPED) &&
+		!proc_create("softnet_stat", S_IRUGO, net->proc_net,
 			 &softnet_seq_fops))
 		goto out_dev;
-	if (!proc_create("ptype", S_IRUGO, net->proc_net, &ptype_seq_fops))
+	if (!IS_ENABLED(CONFIG_PROC_STRIPPED) &&
+		!proc_create("ptype", S_IRUGO, net->proc_net, &ptype_seq_fops))
 		goto out_softnet;
 
 	if (wext_proc_init(net))
@@ -318,9 +334,11 @@ static int __net_init dev_proc_net_init(struct net *net)
 out:
 	return rc;
 out_ptype:
-	remove_proc_entry("ptype", net->proc_net);
+	if (!IS_ENABLED(CONFIG_PROC_STRIPPED))
+		remove_proc_entry("ptype", net->proc_net);
 out_softnet:
-	remove_proc_entry("softnet_stat", net->proc_net);
+	if (!IS_ENABLED(CONFIG_PROC_STRIPPED))
+		remove_proc_entry("softnet_stat", net->proc_net);
 out_dev:
 	remove_proc_entry("dev", net->proc_net);
 	goto out;
@@ -330,8 +348,10 @@ static void __net_exit dev_proc_net_exit(struct net *net)
 {
 	wext_proc_exit(net);
 
-	remove_proc_entry("ptype", net->proc_net);
-	remove_proc_entry("softnet_stat", net->proc_net);
+	if (!IS_ENABLED(CONFIG_PROC_STRIPPED)) {
+		remove_proc_entry("ptype", net->proc_net);
+		remove_proc_entry("softnet_stat", net->proc_net);
+	}
 	remove_proc_entry("dev", net->proc_net);
 }
 
@@ -350,15 +370,10 @@ static int dev_mc_seq_show(struct seq_file *seq, void *v)
 
 	netif_addr_lock_bh(dev);
 	netdev_for_each_mc_addr(ha, dev) {
-		int i;
-
-		seq_printf(seq, "%-4d %-15s %-5d %-5d ", dev->ifindex,
-			   dev->name, ha->refcount, ha->global_use);
-
-		for (i = 0; i < dev->addr_len; i++)
-			seq_printf(seq, "%02x", ha->addr[i]);
-
-		seq_putc(seq, '\n');
+		seq_printf(seq, "%-4d %-15s %-5d %-5d %*phN\n",
+			   dev->ifindex, dev->name,
+			   ha->refcount, ha->global_use,
+			   (int)dev->addr_len, ha->addr);
 	}
 	netif_addr_unlock_bh(dev);
 	return 0;

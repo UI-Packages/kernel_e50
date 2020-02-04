@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Definitions and Declarations for tuple.
  *
@@ -142,20 +143,6 @@ static inline bool nf_ct_tuple_equal(const struct nf_conntrack_tuple *t1,
 	return __nf_ct_tuple_src_equal(t1, t2) &&
 	       __nf_ct_tuple_dst_equal(t1, t2);
 }
-
-#if defined (CONFIG_NAT_FCONE) || defined (CONFIG_NAT_RCONE)
-static inline int nf_ct_cone_tuple_equal(const struct nf_conntrack_tuple *t1,
-                                         const struct nf_conntrack_tuple *t2)
-{
-#if defined (CONFIG_NAT_FCONE)    /* Full Cone */
-        return __nf_ct_tuple_dst_equal(t1, t2);
-#elif defined (CONFIG_NAT_RCONE)  /* Restricted Cone */
-        return (__nf_ct_tuple_dst_equal(t1, t2) &&
-                nf_inet_addr_cmp(&t1->src.u3, &t2->src.u3)  &&
-                t1->src.l3num == t2->src.l3num);
-#endif
-}
-#endif
 
 static inline bool
 nf_ct_tuple_mask_equal(const struct nf_conntrack_tuple_mask *m1,

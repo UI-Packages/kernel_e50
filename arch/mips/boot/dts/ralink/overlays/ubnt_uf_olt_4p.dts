@@ -1,0 +1,153 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "ubiquiti,ufolt4p";
+
+	fragment@0 {
+		target-path = "/palmbus@1E000000/spi@b00";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			leds {
+				compatible = "leds-spi-shift-register";
+				status = "ok";
+				reg = <0>;
+				spi-max-frequency = <123000>;
+				words = <3>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				pon1_green {
+					reg = <8>;
+				};
+				pon1_white {
+					reg = <9>;
+				};
+				pon2_green {
+					reg = <10>;
+				};
+				pon2_white {
+					reg = <11>;
+				};
+				pon3_green {
+					reg = <12>;
+				};
+				pon3_white {
+					reg = <13>;
+				};
+				pon4_green {
+					reg = <14>;
+				};
+				pon4_white {
+					reg = <15>;
+				};
+				sfp1_green {
+					reg = <16>;
+				};
+				sfp1_white {
+					reg = <17>;
+				};
+				mgmt_green {
+					reg = <20>;
+				};
+				mgmt_orange {
+					reg = <21>;
+				};
+			};
+		};
+	};
+	fragment@1 {
+		target-path = "/palmbus@1E000000/i2c@900/i2c-switch@71/i2c71@0";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			pon4_i2c: pon@1 {
+				compatible = "ubnt,pon-i2c";
+				reg = <0x50>;
+			};
+		};
+	};
+	fragment@2 {
+		target-path = "/palmbus@1E000000/i2c@900/i2c-switch@71/i2c71@1";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			pon3_i2c: pon@2 {
+				compatible = "ubnt,pon-i2c";
+				reg = <0x50>;
+			};
+		};
+	};
+	fragment@3 {
+		target-path = "/palmbus@1E000000/i2c@900/i2c-switch@71/i2c71@4";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			pon2_i2c: pon@5 {
+				compatible = "ubnt,pon-i2c";
+				reg = <0x50>;
+			};
+		};
+	};
+	fragment@4 {
+		target-path = "/palmbus@1E000000/i2c@900/i2c-switch@71/i2c71@5";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			pon1_i2c: pon@6 {
+				compatible = "ubnt,pon-i2c";
+				reg = <0x50>;
+			};
+		};
+	};
+	fragment@5 {
+		target-path = "/palmbus@1E000000/i2c@900/i2c-switch@72/i2c@0";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			sfp1_i2c: sfp@1 {
+				compatible = "ubnt,sfp-i2c";
+				reg = <0x50>;
+			};
+		};
+	};
+	fragment@7 {
+		target-path = "/";
+		__overlay__ {
+			ubnt_platform {
+				compatible = "ubnt_platform_olt";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				spi_nor@0 {
+					status = "okay";
+					spi_nor = <&spi_nor>;
+				};
+				sfp@1 {
+					i2c = <&sfp1_i2c>;
+					gpio_present  = <&gpio_i2c_21 8 1>;
+					reg = <1>;
+				};
+				pon@1 {
+					i2c = <&pon1_i2c>;
+					gpio_present  = <&gpio_i2c_21 5 1>;
+					reg = <1>;
+				};
+				pon@2 {
+					i2c = <&pon2_i2c>;
+					gpio_present  = <&gpio_i2c_21 4 1>;
+					reg = <2>;
+				};
+				pon@5 {
+					i2c = <&pon3_i2c>;
+					gpio_present  = <&gpio_i2c_21 1 1>;
+					reg = <3>;
+				};
+				pon@4 {
+					i2c = <&pon4_i2c>;
+					gpio_present  = <&gpio_i2c_21 0 1>;
+					reg = <4>;
+				};
+			};
+		};
+	};
+};

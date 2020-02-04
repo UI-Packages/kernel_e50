@@ -1,2 +1,0 @@
-config MT6605_NFC
-    tristate "MediaTek(R) NFC support"

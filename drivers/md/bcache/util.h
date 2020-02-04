@@ -1,9 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef _BCACHE_UTIL_H
 #define _BCACHE_UTIL_H
 
+#include <linux/blkdev.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
+#include <linux/sched/clock.h>
 #include <linux/llist.h>
 #include <linux/ratelimit.h>
 #include <linux/vmalloc.h>
@@ -15,29 +18,19 @@
 
 struct closure;
 
-#include <trace/events/bcache.h>
+#ifdef CONFIG_BCACHE_DEBUG
 
-#ifdef CONFIG_BCACHE_EDEBUG
-
+#define EBUG_ON(cond)			BUG_ON(cond)
 #define atomic_dec_bug(v)	BUG_ON(atomic_dec_return(v) < 0)
 #define atomic_inc_bug(v, i)	BUG_ON(atomic_inc_return(v) <= i)
 
-#else /* EDEBUG */
+#else /* DEBUG */
 
+#define EBUG_ON(cond)			do { if (cond); } while (0)
 #define atomic_dec_bug(v)	atomic_dec(v)
 #define atomic_inc_bug(v, i)	atomic_inc(v)
 
 #endif
-
-#define BITMASK(name, type, field, offset, size)		\
-static inline uint64_t name(const type *k)			\
-{ return (k->field >> offset) & ~(((uint64_t) ~0) << size); }	\
-								\
-static inline void SET_##name(type *k, uint64_t v)		\
-{								\
-	k->field &= ~(~((uint64_t) ~0 << size) << offset);	\
-	k->field |= v << offset;				\
-}
 
 #define DECLARE_HEAP(type, name)					\
 	struct {							\
@@ -51,20 +44,13 @@ static inline void SET_##name(type *k, uint64_t v)		\
 	(heap)->used = 0;						\
 	(heap)->size = (_size);						\
 	_bytes = (heap)->size * sizeof(*(heap)->data);			\
-	(heap)->data = NULL;						\
-	if (_bytes < KMALLOC_MAX_SIZE)					\
-		(heap)->data = kmalloc(_bytes, (gfp));			\
-	if ((!(heap)->data) && ((gfp) & GFP_KERNEL))			\
-		(heap)->data = vmalloc(_bytes);				\
+	(heap)->data = kvmalloc(_bytes, (gfp) & GFP_KERNEL);		\
 	(heap)->data;							\
 })
 
 #define free_heap(heap)							\
 do {									\
-	if (is_vmalloc_addr((heap)->data))				\
-		vfree((heap)->data);					\
-	else								\
-		kfree((heap)->data);					\
+	kvfree((heap)->data);						\
 	(heap)->data = NULL;						\
 } while (0)
 
@@ -122,7 +108,7 @@ do {									\
 	_r;								\
 })
 
-#define heap_peek(h)	((h)->size ? (h)->data[0] : NULL)
+#define heap_peek(h)	((h)->used ? (h)->data[0] : NULL)
 
 #define heap_full(h)	((h)->used == (h)->size)
 
@@ -147,12 +133,8 @@ do {									\
 									\
 	(fifo)->mask = _allocated_size - 1;				\
 	(fifo)->front = (fifo)->back = 0;				\
-	(fifo)->data = NULL;						\
 									\
-	if (_bytes < KMALLOC_MAX_SIZE)					\
-		(fifo)->data = kmalloc(_bytes, (gfp));			\
-	if ((!(fifo)->data) && ((gfp) & GFP_KERNEL))			\
-		(fifo)->data = vmalloc(_bytes);				\
+	(fifo)->data = kvmalloc(_bytes, (gfp) & GFP_KERNEL);		\
 	(fifo)->data;							\
 })
 
@@ -172,10 +154,7 @@ do {									\
 
 #define free_fifo(fifo)							\
 do {									\
-	if (is_vmalloc_addr((fifo)->data))				\
-		vfree((fifo)->data);					\
-	else								\
-		kfree((fifo)->data);					\
+	kvfree((fifo)->data);						\
 	(fifo)->data = NULL;						\
 } while (0)
 
@@ -390,6 +369,7 @@ ssize_t bch_snprint_string_list(char *buf, size_t size, const char * const list[
 ssize_t bch_read_string_list(const char *buf, const char * const list[]);
 
 struct time_stats {
+	spinlock_t	lock;
 	/*
 	 * all fields are in nanoseconds, averages are ewmas stored left shifted
 	 * by 8
@@ -401,6 +381,11 @@ struct time_stats {
 };
 
 void bch_time_stats_update(struct time_stats *stats, uint64_t time);
+
+static inline unsigned local_clock_us(void)
+{
+	return local_clock() >> 10;
+}
 
 #define NSEC_PER_ns			1L
 #define NSEC_PER_us			NSEC_PER_USEC
@@ -419,8 +404,8 @@ do {									\
 			  average_frequency,	frequency_units);	\
 	__print_time_stat(stats, name,					\
 			  average_duration,	duration_units);	\
-	__print_time_stat(stats, name,					\
-			  max_duration,		duration_units);	\
+	sysfs_print(name ## _ ##max_duration ## _ ## duration_units,	\
+			div_u64((stats)->max_duration, NSEC_PER_ ## duration_units));\
 									\
 	sysfs_print(name ## _last_ ## frequency_units, (stats)->last	\
 		    ? div_s64(local_clock() - (stats)->last,		\
@@ -572,21 +557,17 @@ static inline unsigned fract_exp_two(unsigned x, unsigned fract_bits)
 	return x;
 }
 
-#define bio_end(bio)	((bio)->bi_sector + bio_sectors(bio))
-
 void bch_bio_map(struct bio *bio, void *base);
-
-int bch_bio_alloc_pages(struct bio *bio, gfp_t gfp);
 
 static inline sector_t bdev_sectors(struct block_device *bdev)
 {
 	return bdev->bd_inode->i_size >> 9;
 }
 
-#define closure_bio_submit(bio, cl, dev)				\
+#define closure_bio_submit(bio, cl)					\
 do {									\
 	closure_get(cl);						\
-	bch_generic_make_request(bio, &(dev)->bio_split_hook);		\
+	generic_make_request(bio);					\
 } while (0)
 
 uint64_t bch_crc64_update(uint64_t, const void *, size_t);

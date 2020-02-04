@@ -1,9 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/stat.h>
 #include <linux/sysctl.h>
 #include "../fs/xfs/xfs_sysctl.h"
 #include <linux/sunrpc/debug.h>
 #include <linux/string.h>
-#include <net/ip_vs.h>
 #include <linux/syscalls.h>
 #include <linux/namei.h>
 #include <linux/mount.h>
@@ -14,6 +14,7 @@
 #include <linux/ctype.h>
 #include <linux/netdevice.h>
 #include <linux/kernel.h>
+#include <linux/uuid.h>
 #include <linux/slab.h>
 #include <linux/compat.h>
 
@@ -140,6 +141,7 @@ static const struct bin_table bin_kern_table[] = {
 	{ CTL_INT,	KERN_COMPAT_LOG,		"compat-log" },
 	{ CTL_INT,	KERN_MAX_LOCK_DEPTH,		"max_lock_depth" },
 	{ CTL_INT,	KERN_PANIC_ON_NMI,		"panic_on_unrecovered_nmi" },
+	{ CTL_INT,	KERN_PANIC_ON_WARN,		"panic_on_warn" },
 	{}
 };
 
@@ -393,7 +395,6 @@ static const struct bin_table bin_net_ipv4_table[] = {
 	{ CTL_INT,	NET_TCP_MTU_PROBING,			"tcp_mtu_probing" },
 	{ CTL_INT,	NET_TCP_BASE_MSS,			"tcp_base_mss" },
 	{ CTL_INT,	NET_IPV4_TCP_WORKAROUND_SIGNED_WINDOWS,	"tcp_workaround_signed_windows" },
-	{ CTL_INT,	NET_TCP_DMA_COPYBREAK,			"tcp_dma_copybreak" },
 	{ CTL_INT,	NET_TCP_SLOW_START_AFTER_IDLE,		"tcp_slow_start_after_idle" },
 	{ CTL_INT,	NET_CIPSOV4_CACHE_ENABLE,		"cipso_cache_enable" },
 	{ CTL_INT,	NET_CIPSOV4_CACHE_BUCKET_SIZE,		"cipso_cache_bucket_size" },
@@ -525,6 +526,7 @@ static const struct bin_table bin_net_ipv6_conf_var_table[] = {
 	{ CTL_INT,	NET_IPV6_ACCEPT_RA_RT_INFO_MAX_PLEN,	"accept_ra_rt_info_max_plen" },
 	{ CTL_INT,	NET_IPV6_PROXY_NDP,			"proxy_ndp" },
 	{ CTL_INT,	NET_IPV6_ACCEPT_SOURCE_ROUTE,		"accept_source_route" },
+	{ CTL_INT,	NET_IPV6_ACCEPT_RA_FROM_LOCAL,		"accept_ra_from_local" },
 	{}
 };
 
@@ -987,8 +989,9 @@ static ssize_t bin_intvec(struct file *file,
 		size_t length = oldlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buffer, BUFSZ - 1);
+		result = kernel_read(file, buffer, BUFSZ - 1, &pos);
 		if (result < 0)
 			goto out_kfree;
 
@@ -1017,6 +1020,7 @@ static ssize_t bin_intvec(struct file *file,
 		size_t length = newlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
 		str = buffer;
 		end = str + BUFSZ;
@@ -1027,10 +1031,10 @@ static ssize_t bin_intvec(struct file *file,
 			if (get_user(value, vec + i))
 				goto out_kfree;
 
-			str += snprintf(str, end - str, "%lu\t", value);
+			str += scnprintf(str, end - str, "%lu\t", value);
 		}
 
-		result = kernel_write(file, buffer, str - buffer, 0);
+		result = kernel_write(file, buffer, str - buffer, &pos);
 		if (result < 0)
 			goto out_kfree;
 	}
@@ -1058,8 +1062,9 @@ static ssize_t bin_ulongvec(struct file *file,
 		size_t length = oldlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buffer, BUFSZ - 1);
+		result = kernel_read(file, buffer, BUFSZ - 1, &pos);
 		if (result < 0)
 			goto out_kfree;
 
@@ -1088,6 +1093,7 @@ static ssize_t bin_ulongvec(struct file *file,
 		size_t length = newlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
 		str = buffer;
 		end = str + BUFSZ;
@@ -1098,10 +1104,10 @@ static ssize_t bin_ulongvec(struct file *file,
 			if (get_user(value, vec + i))
 				goto out_kfree;
 
-			str += snprintf(str, end - str, "%lu\t", value);
+			str += scnprintf(str, end - str, "%lu\t", value);
 		}
 
-		result = kernel_write(file, buffer, str - buffer, 0);
+		result = kernel_write(file, buffer, str - buffer, &pos);
 		if (result < 0)
 			goto out_kfree;
 	}
@@ -1119,34 +1125,25 @@ static ssize_t bin_uuid(struct file *file,
 
 	/* Only supports reads */
 	if (oldval && oldlen) {
-		char buf[40], *str = buf;
-		unsigned char uuid[16];
-		int i;
+		char buf[UUID_STRING_LEN + 1];
+		uuid_t uuid;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buf, sizeof(buf) - 1);
+		result = kernel_read(file, buf, sizeof(buf) - 1, &pos);
 		if (result < 0)
 			goto out;
 
 		buf[result] = '\0';
 
-		/* Convert the uuid to from a string to binary */
-		for (i = 0; i < 16; i++) {
-			result = -EIO;
-			if (!isxdigit(str[0]) || !isxdigit(str[1]))
-				goto out;
-
-			uuid[i] = (hex_to_bin(str[0]) << 4) |
-					hex_to_bin(str[1]);
-			str += 2;
-			if (*str == '-')
-				str++;
-		}
+		result = -EIO;
+		if (uuid_parse(buf, &uuid))
+			goto out;
 
 		if (oldlen > 16)
 			oldlen = 16;
 
 		result = -EFAULT;
-		if (copy_to_user(oldval, uuid, oldlen))
+		if (copy_to_user(oldval, &uuid, oldlen))
 			goto out;
 
 		copied = oldlen;
@@ -1165,8 +1162,9 @@ static ssize_t bin_dn_node_address(struct file *file,
 		char buf[15], *nodep;
 		unsigned long area, node;
 		__le16 dnaddr;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buf, sizeof(buf) - 1);
+		result = kernel_read(file, buf, sizeof(buf) - 1, &pos);
 		if (result < 0)
 			goto out;
 
@@ -1199,6 +1197,7 @@ static ssize_t bin_dn_node_address(struct file *file,
 		__le16 dnaddr;
 		char buf[15];
 		int len;
+		loff_t pos = 0;
 
 		result = -EINVAL;
 		if (newlen != sizeof(dnaddr))
@@ -1208,11 +1207,11 @@ static ssize_t bin_dn_node_address(struct file *file,
 		if (get_user(dnaddr, (__le16 __user *)newval))
 			goto out;
 
-		len = snprintf(buf, sizeof(buf), "%hu.%hu",
+		len = scnprintf(buf, sizeof(buf), "%hu.%hu",
 				le16_to_cpu(dnaddr) >> 10,
 				le16_to_cpu(dnaddr) & 0x3ff);
 
-		result = kernel_write(file, buf, len, 0);
+		result = kernel_write(file, buf, len, &pos);
 		if (result < 0)
 			goto out;
 	}
@@ -1323,7 +1322,7 @@ static ssize_t binary_sysctl(const int *name, int nlen,
 	}
 
 	mnt = task_active_pid_ns(current)->proc_mnt;
-	file = file_open_root(mnt->mnt_root, mnt, pathname, flags);
+	file = file_open_root(mnt->mnt_root, mnt, pathname, flags, 0);
 	result = PTR_ERR(file);
 	if (IS_ERR(file))
 		goto out_putname;
@@ -1357,7 +1356,7 @@ static void deprecated_sysctl_warning(const int *name, int nlen)
 	 * CTL_KERN/KERN_VERSION is used by older glibc and cannot
 	 * ever go away.
 	 */
-	if (name[0] == CTL_KERN && name[1] == KERN_VERSION)
+	if (nlen >= 2 && name[0] == CTL_KERN && name[1] == KERN_VERSION)
 		return;
 
 	if (printk_ratelimit()) {
@@ -1365,8 +1364,8 @@ static void deprecated_sysctl_warning(const int *name, int nlen)
 			"warning: process `%s' used the deprecated sysctl "
 			"system call with ", current->comm);
 		for (i = 0; i < nlen; i++)
-			printk("%d.", name[i]);
-		printk("\n");
+			printk(KERN_CONT "%d.", name[i]);
+		printk(KERN_CONT "\n");
 	}
 	return;
 }
