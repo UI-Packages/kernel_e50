@@ -72,6 +72,8 @@ limit_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	struct xt_limit_priv *priv = r->master;
 	unsigned long now = jiffies;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	spin_lock_bh(&limit_lock);
 	priv->credit += (now - xchg(&priv->prev, now)) * CREDITS_PER_JIFFY;
 	if (priv->credit > r->credit_cap)

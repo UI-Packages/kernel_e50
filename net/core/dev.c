@@ -2807,6 +2807,8 @@ int dev_queue_xmit(struct sk_buff *skb)
 #endif
 	trace_net_dev_queue(skb);
 	if (q->enqueue) {
+		if (q->ops != &pfifo_fast_ops)
+			skb->cvm_reserved |= SKB_CVM_RESERVED_4;
 		rc = __dev_xmit_skb(skb, q, dev, txq);
 		goto out;
 	}

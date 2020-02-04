@@ -327,8 +327,12 @@ prompt "Ralink NAT Type"
 	
 config  RA_NAT_NONE
 bool "None"
+config  RA_NAT_HW
+bool "Hardware"
+depends on !RALINK_RT5350
 endchoice
 
+source "net/nat/hw_nat/Kconfig"
 
 
 endmenu

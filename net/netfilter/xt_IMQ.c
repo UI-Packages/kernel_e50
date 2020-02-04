@@ -12,6 +12,7 @@ static unsigned int imq_target(struct sk_buff *pskb,
 {
 	const struct xt_imq_info *mr = par->targinfo;
 
+	((struct xt_action_param *)par)->cvm_reserved |= SKB_CVM_RESERVED_1;
 	pskb->imq_flags = (mr->todev & IMQ_F_IFMASK) | IMQ_F_ENQUEUE;
 
 	return XT_CONTINUE;

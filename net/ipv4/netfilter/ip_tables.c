@@ -326,6 +326,7 @@ ipt_do_table(struct sk_buff *skb,
 	acpar.out     = out;
 	acpar.family  = NFPROTO_IPV4;
 	acpar.hooknum = hook;
+	acpar.cvm_reserved = 0;
 
 	IP_NF_ASSERT(table->valid_hooks & (1 << hook));
 	local_bh_disable();
@@ -427,6 +428,8 @@ ipt_do_table(struct sk_buff *skb,
 	pr_debug("Exiting %s; resetting sp from %u to %u\n",
 		 __func__, *stackptr, origptr);
 	*stackptr = origptr;
+	skb->cvm_reserved |= acpar.cvm_reserved;
+
  	xt_write_recseq_end(addend);
  	local_bh_enable();
 

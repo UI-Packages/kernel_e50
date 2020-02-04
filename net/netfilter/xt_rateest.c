@@ -22,6 +22,8 @@ xt_rateest_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	u_int32_t bps1, bps2, pps1, pps2;
 	bool ret = true;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	spin_lock_bh(&info->est1->lock);
 	r = &info->est1->rstats;
 	if (info->flags & XT_RATEEST_MATCH_DELTA) {

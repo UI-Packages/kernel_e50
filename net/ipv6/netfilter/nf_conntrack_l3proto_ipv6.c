@@ -120,6 +120,16 @@ static unsigned int ipv6_helper(unsigned int hooknum,
 	help = nfct_help(ct);
 	if (!help)
 		return NF_ACCEPT;
+
+#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+        if( IS_SPACE_AVAILABLED(skb)  &&
+                ((FOE_MAGIC_TAG(skb) == FOE_MAGIC_PCI) ||
+                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_WLAN) ||
+                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_GE))){
+            FOE_ALG(skb)=1;
+        }
+#endif
+
 	/* rcu_read_lock()ed by nf_hook_slow */
 	helper = rcu_dereference(help->helper);
 	if (!helper)
@@ -158,15 +168,6 @@ static unsigned int ipv6_confirm(unsigned int hooknum,
 		pr_debug("proto header not found\n");
 		goto out;
 	}
-
-#if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
-        if( IS_SPACE_AVAILABLED(skb)  &&
-                ((FOE_MAGIC_TAG(skb) == FOE_MAGIC_PCI) ||
-                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_WLAN) ||
-                 (FOE_MAGIC_TAG(skb) == FOE_MAGIC_GE))){
-            FOE_ALG(skb)=1;
-        }
-#endif
 
 	/* adjust seqs for loopback traffic only in outgoing direction */
 	if (test_bit(IPS_SEQ_ADJUST_BIT, &ct->status) &&

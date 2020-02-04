@@ -159,6 +159,8 @@ time_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	struct xtm current_time;
 	s64 stamp;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	/*
 	 * We cannot use get_seconds() instead of __net_timestamp() here.
 	 * Suppose you have two rules:

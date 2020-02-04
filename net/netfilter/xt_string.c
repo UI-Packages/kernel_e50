@@ -29,6 +29,8 @@ string_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	struct ts_state state;
 	bool invert;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	memset(&state, 0, sizeof(struct ts_state));
 	invert = conf->u.v1.flags & XT_STRING_FLAG_INVERT;
 

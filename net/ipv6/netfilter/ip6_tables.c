@@ -343,6 +343,7 @@ ip6t_do_table(struct sk_buff *skb,
 	acpar.out     = out;
 	acpar.family  = NFPROTO_IPV6;
 	acpar.hooknum = hook;
+	acpar.cvm_reserved = 0;
 
 	IP_NF_ASSERT(table->valid_hooks & (1 << hook));
 
@@ -431,6 +432,7 @@ ip6t_do_table(struct sk_buff *skb,
 	} while (!acpar.hotdrop);
 
 	*stackptr = origptr;
+	skb->cvm_reserved |= acpar.cvm_reserved;
 
  	xt_write_recseq_end(addend);
  	local_bh_enable();

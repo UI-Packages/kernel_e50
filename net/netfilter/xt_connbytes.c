@@ -28,6 +28,8 @@ connbytes_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	u_int64_t pkts = 0;
 	const struct nf_conn_counter *counters;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct)
 		return false;

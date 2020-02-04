@@ -374,6 +374,7 @@ int tcf_action_exec(struct sk_buff *skb, const struct tc_action *act,
 	const struct tc_action *a;
 	int ret = -1;
 
+	skb->cvm_reserved |= SKB_CVM_RESERVED_3;
 	if (skb->tc_verd & TC_NCLS) {
 		skb->tc_verd = CLR_TC_NCLS(skb->tc_verd);
 		ret = TC_ACT_OK;

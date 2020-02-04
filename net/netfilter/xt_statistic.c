@@ -35,6 +35,8 @@ statistic_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	bool ret = info->flags & XT_STATISTIC_INVERT;
 	int nval, oval;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	switch (info->mode) {
 	case XT_STATISTIC_MODE_RANDOM:
 		if ((net_random() & 0x7FFFFFFF) < info->u.random.probability)

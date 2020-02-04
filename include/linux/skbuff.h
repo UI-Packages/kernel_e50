@@ -405,6 +405,18 @@ typedef unsigned char *sk_buff_data_t;
  *	@users: User count - see {datagram,tcp}.c
  */
 
+enum {
+	SKB_CVM_RESERVED_0 = (1 << 0),
+	SKB_CVM_RESERVED_1 = (1 << 1),
+	SKB_CVM_RESERVED_2 = (1 << 2),
+	SKB_CVM_RESERVED_3 = (1 << 3),
+	SKB_CVM_RESERVED_4 = (1 << 4),
+	SKB_CVM_RESERVED_15 = (1 << 15), 
+};
+
+#define SKB_DPI_SHIFT 15
+#define SKB_CVM_RESERVED_MASK ((1 << SKB_DPI_SHIFT) - 1)
+
 struct sk_buff {
 	/* These two members must be first. */
 	struct sk_buff		*next;
@@ -528,6 +540,9 @@ struct sk_buff {
 	sk_buff_data_t		transport_header;
 	sk_buff_data_t		network_header;
 	sk_buff_data_t		mac_header;
+
+	__u16			cvm_reserved;
+
 	/* These elements must be at the end, see alloc_skb() for details.  */
 	sk_buff_data_t		tail;
 	sk_buff_data_t		end;

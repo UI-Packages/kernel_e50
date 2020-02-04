@@ -69,8 +69,10 @@ int mii_ethtool_gset(struct mii_if_info *mii, struct ethtool_cmd *ecmd)
 	/* only supports twisted-pair */
 	ecmd->port = PORT_MII;
 
-	/* only supports internal transceiver */
-	ecmd->transceiver = XCVR_INTERNAL;
+	if (mii->phy_id == 7)
+		ecmd->transceiver = XCVR_EXTERNAL;
+	else
+		ecmd->transceiver = XCVR_INTERNAL;
 
 	/* this isn't fully supported at higher layers */
 	ecmd->phy_address = mii->phy_id;

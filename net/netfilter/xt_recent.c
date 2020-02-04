@@ -237,6 +237,8 @@ recent_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	u_int8_t ttl;
 	bool ret = info->invert;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	if (par->family == NFPROTO_IPV4) {
 		const struct iphdr *iph = ip_hdr(skb);
 

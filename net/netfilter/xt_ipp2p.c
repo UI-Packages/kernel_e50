@@ -830,6 +830,8 @@ ipp2p_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	int i = 0;
 	unsigned int hlen = ntohs(ip->tot_len) - ip_hdrlen(skb);	/* hlen = packet-data length */
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	/* must not be a fragment */
 	if (par->fragoff != 0) {
 		if (info->debug)

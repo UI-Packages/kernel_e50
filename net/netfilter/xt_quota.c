@@ -29,6 +29,8 @@ quota_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	struct xt_quota_priv *priv = q->master;
 	bool ret = q->flags & XT_QUOTA_INVERT;
 
+	par->cvm_reserved |= SKB_CVM_RESERVED_1;
+
 	spin_lock_bh(&priv->lock);
 	if (priv->quota >= skb->len) {
 		priv->quota -= skb->len;

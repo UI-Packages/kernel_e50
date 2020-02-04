@@ -54,6 +54,8 @@ u16 (*get_switch0_pvid)(void) = NULL;
 EXPORT_SYMBOL(get_switch0_pvid);
 int (*is_switch0_member)(u32 port) = NULL;
 EXPORT_SYMBOL(is_switch0_member);
+int (*is_switch0_vlan_aware)(void) = NULL;
+EXPORT_SYMBOL(is_switch0_vlan_aware);
 
 #if defined (TASKLET_WORKQUEUE_SW)
 int init_schedule;
@@ -128,13 +130,18 @@ extern struct ubnt_bd_t ubnt_bd_g;
 
 #if defined (CONFIG_RAETH_SPECIAL_TAG)
 #define MAX_INTF 6
-struct net_device		*pdev_raether[MAX_INTF] = {NULL};
+#define PORT_VID_BASE 4088
+#define SWITCH_DEF_VID (PORT_VID_BASE + 6)
+
+struct net_device *pdev_raether[MAX_INTF] = {NULL};
 int upd_eth_stats(int port, u32 rx_pkt, u32 rx_byte, u32 rx_err, u32 rx_drop,
 	u32 tx_pkt, u32 tx_byte, u32 tx_err, u32 tx_drop)
 {
 	struct net_device *pdev = pdev_raether[port];
 	struct net_device *dev;
 	PSEUDO_ADAPTER *pAd;
+	if (!pdev)
+		goto out;
 	dev = dev_get_by_index(&init_net, pdev->ifindex);
 	if (!dev)
 		goto out;
@@ -758,37 +765,69 @@ rt_get_skb_header(struct sk_buff *skb, void **iphdr, void **tcph,
 #endif
 
 #if defined (CONFIG_RAETH_SPECIAL_TAG)
+int get_port(struct sk_buff *skb)
+{
+	struct vlan_ethhdr *veth;
+
+	veth = (struct vlan_ethhdr *)skb->data;
+	return ((veth->h_vlan_proto >> 8) & 0xF);
+}
+
 int get_vlan_id(struct sk_buff *skb)
 {
-        struct vlan_ethhdr *veth;
+	struct vlan_ethhdr *veth;
 
-        veth = (struct vlan_ethhdr *)(skb->data);
+	veth = (struct vlan_ethhdr *)LAYER2_HEADER(skb);
+	return ntohs(veth->h_vlan_TCI);
+}
 
-        return ((veth->h_vlan_proto >> 8) & 0xF);
+int get_spn(struct sk_buff *skb)
+{
+	struct vlan_ethhdr *veth;
+
+	veth = (struct vlan_ethhdr *)LAYER2_HEADER(skb);
+	return ((veth->h_vlan_proto >> 8) & 0xF);
+}
+
+int get_vpm(struct sk_buff *skb)
+{
+	struct vlan_ethhdr *veth;
+
+	veth = (struct vlan_ethhdr *)LAYER2_HEADER(skb);
+	return (veth->h_vlan_proto & 0x3);
+}
+
+int restore_vlan_tag(struct sk_buff *skb)
+{
+	struct vlan_ethhdr *veth;
+	int port;
+
+	veth = (struct vlan_ethhdr *)LAYER2_HEADER(skb);
+	port = ((veth->h_vlan_proto >> 8) & 0xF);
+	skb->protocol = veth->h_vlan_proto = htons(ETH_P_8021Q);
+	return port;
 }
 
 int pop_vlan_tag(struct sk_buff *skb)
 {
-        struct ethhdr *eth;
-        struct vlan_ethhdr *veth;
-        uint16_t VirIfIdx;
+	struct ethhdr *eth;
+	struct vlan_ethhdr *veth;
+	int port;
 
-        veth = (struct vlan_ethhdr *)LAYER2_HEADER(skb);
+	veth = (struct vlan_ethhdr *)LAYER2_HEADER(skb);
+	port = ((veth->h_vlan_proto >> 8) & 0xF);
 
-        VirIfIdx = (((veth->h_vlan_proto >> 8) & 0xF) + 1);
+	/* remove VLAN tag */
+	skb->data = LAYER2_HEADER(skb);
+	LAYER2_HEADER(skb) += VLAN_HLEN;
+	memmove(LAYER2_HEADER(skb), skb->data, ETH_ALEN * 2);
 
-        /* remove VLAN tag */
-        skb->data = LAYER2_HEADER(skb);
-        LAYER2_HEADER(skb) += VLAN_HLEN;
-        memmove(LAYER2_HEADER(skb), skb->data, ETH_ALEN * 2);
+	skb_pull(skb, VLAN_HLEN);
+	skb->data += ETH_HLEN;
+	eth = (struct ethhdr *)LAYER2_HEADER(skb);
+	skb->protocol = eth->h_proto;
 
-        skb_pull(skb, VLAN_HLEN);
-        skb->data += ETH_HLEN;
-        eth = (struct ethhdr *)LAYER2_HEADER(skb);
-        skb->protocol = eth->h_proto;
-
-        return VirIfIdx;
-
+	return port;
 }
 #endif
 
@@ -912,7 +951,7 @@ static int rt2880_eth_recv(struct net_device* dev)
 		}
 #else
 #if defined (CONFIG_RAETH_SPECIAL_TAG)
-		port = get_vlan_id(rx_skb);
+		port = get_port(rx_skb);
 		if (is_switch0_member != NULL && is_switch0_member(port)) {
 			dev = rx_skb->dev = dev_raether;
 		} else {
@@ -997,12 +1036,30 @@ static int rt2880_eth_recv(struct net_device* dev)
 #endif
 
 #if defined (CONFIG_RAETH_SPECIAL_TAG)
-		port = pop_vlan_tag(rx_skb) - 1;
-		if (is_switch0_member != NULL && is_switch0_member(port)) {
+// For router ports (transparent mode):
+//     always remove extra special tag (4 bytes)
+//
+// For switched ports (ports added in switch0):
+//     if switch0 mode is "dumb" (transparent mode),
+//     always remove extra special tag (4 bytes).
+//     if switch0 mode is "vlan aware" (user mode),
+//     remove vlan if vid==4094 (default vlan), otherwise restore vlan header.
+		port = get_spn(rx_skb);
+		FOE_SP(rx_skb) = port;
+		if (is_switch0_member && is_switch0_member(port)) { // sw ports
+			if (is_switch0_vlan_aware && is_switch0_vlan_aware()) { // vlan aware
+				if (get_vlan_id(rx_skb) == SWITCH_DEF_VID)
+					pop_vlan_tag(rx_skb);
+				else
+					restore_vlan_tag(rx_skb);
+			} else { // dumb mode
+				pop_vlan_tag(rx_skb);
+			}
 			dev = rx_skb->dev = dev_raether;
 			ei_local->stat.rx_packets++;
 			ei_local->stat.rx_bytes += length;
-		} else {
+		} else { // router ports
+			pop_vlan_tag(rx_skb);
 			dev = rx_skb->dev = pdev_raether[port];
 			pAd = netdev_priv(rx_skb->dev);
 			pAd->stat.rx_packets++;
@@ -1810,6 +1867,24 @@ static int check_headroom_size(struct sk_buff **skb)
 	return 1;
 }
 
+static int vlan0_start_xmit(struct sk_buff* skb, struct net_device *dev)
+{
+	PSEUDO_ADAPTER *pAd = netdev_priv(dev);
+
+	if(check_headroom_size(&skb)) {
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
+		skb->vlan_proto= htons(ETH_P_8021Q);
+		skb = __vlan_put_tag(skb, skb->vlan_proto, PORT_VID_BASE + 0);
+#else
+		skb = __vlan_put_tag(skb, PORT_VID_BASE + 0);
+#endif
+		pAd->stat.tx_packets++;
+		pAd->stat.tx_bytes += skb->len;
+		return ei_start_xmit(skb, dev_raether, 1);
+	} else {
+		return 0;
+	}
+}
 static int vlan1_start_xmit(struct sk_buff* skb, struct net_device *dev)
 {
 	PSEUDO_ADAPTER *pAd = netdev_priv(dev);
@@ -1817,9 +1892,9 @@ static int vlan1_start_xmit(struct sk_buff* skb, struct net_device *dev)
 	if(check_headroom_size(&skb)) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
 		skb->vlan_proto= htons(ETH_P_8021Q);
-		skb = __vlan_put_tag(skb, skb->vlan_proto, 1);
+		skb = __vlan_put_tag(skb, skb->vlan_proto, PORT_VID_BASE + 1);
 #else
-		skb = __vlan_put_tag(skb, 1);
+		skb = __vlan_put_tag(skb, PORT_VID_BASE + 1);
 #endif
 		pAd->stat.tx_packets++;
 		pAd->stat.tx_bytes += skb->len;
@@ -1835,9 +1910,9 @@ static int vlan2_start_xmit(struct sk_buff* skb, struct net_device *dev)
 	if(check_headroom_size(&skb)) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
 		skb->vlan_proto= htons(ETH_P_8021Q);
-		skb = __vlan_put_tag(skb, skb->vlan_proto, 2);
+		skb = __vlan_put_tag(skb, skb->vlan_proto, PORT_VID_BASE + 2);
 #else
-		skb = __vlan_put_tag(skb, 2);
+		skb = __vlan_put_tag(skb, PORT_VID_BASE + 2);
 #endif
 		pAd->stat.tx_packets++;
 		pAd->stat.tx_bytes += skb->len;
@@ -1853,9 +1928,9 @@ static int vlan3_start_xmit(struct sk_buff* skb, struct net_device *dev)
 	if(check_headroom_size(&skb)) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
 		skb->vlan_proto= htons(ETH_P_8021Q);
-		skb = __vlan_put_tag(skb, skb->vlan_proto, 3);
+		skb = __vlan_put_tag(skb, skb->vlan_proto, PORT_VID_BASE + 3);
 #else
-		skb = __vlan_put_tag(skb, 3);
+		skb = __vlan_put_tag(skb, PORT_VID_BASE + 3);
 #endif
 		pAd->stat.tx_packets++;
 		pAd->stat.tx_bytes += skb->len;
@@ -1871,9 +1946,9 @@ static int vlan4_start_xmit(struct sk_buff* skb, struct net_device *dev)
 	if(check_headroom_size(&skb)) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
 		skb->vlan_proto= htons(ETH_P_8021Q);
-		skb = __vlan_put_tag(skb, skb->vlan_proto, 4);
+		skb = __vlan_put_tag(skb, skb->vlan_proto, PORT_VID_BASE + 4);
 #else
-		skb = __vlan_put_tag(skb, 4);
+		skb = __vlan_put_tag(skb, PORT_VID_BASE + 4);
 #endif
 		pAd->stat.tx_packets++;
 		pAd->stat.tx_bytes += skb->len;
@@ -1889,27 +1964,9 @@ static int vlan5_start_xmit(struct sk_buff* skb, struct net_device *dev)
 	if(check_headroom_size(&skb)) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
 		skb->vlan_proto= htons(ETH_P_8021Q);
-		skb = __vlan_put_tag(skb, skb->vlan_proto, 5);
+		skb = __vlan_put_tag(skb, skb->vlan_proto, PORT_VID_BASE + 5);
 #else
-		skb = __vlan_put_tag(skb, 5);
-#endif
-		pAd->stat.tx_packets++;
-		pAd->stat.tx_bytes += skb->len;
-		return ei_start_xmit(skb, dev_raether, 1);
-	} else {
-		return 0;
-	}
-}
-static int vlan6_start_xmit(struct sk_buff* skb, struct net_device *dev)
-{
-	PSEUDO_ADAPTER *pAd = netdev_priv(dev);
-
-	if(check_headroom_size(&skb)) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
-		skb->vlan_proto= htons(ETH_P_8021Q);
-		skb = __vlan_put_tag(skb, skb->vlan_proto, 6);
-#else
-		skb = __vlan_put_tag(skb, 6);
+		skb = __vlan_put_tag(skb, PORT_VID_BASE + 5);
 #endif
 		pAd->stat.tx_packets++;
 		pAd->stat.tx_bytes += skb->len;
@@ -1924,18 +1981,24 @@ static int ei_start_xmit_fake(struct sk_buff* skb, struct net_device *dev)
 {
 	END_DEVICE *ei_local = netdev_priv(dev);
 #if defined (CONFIG_RAETH_SPECIAL_TAG)
-	u16 vid = 7;
+	u16 vid = SWITCH_DEF_VID;
 
 	if (get_switch0_pvid != NULL)
 		vid = get_switch0_pvid();
 
 	if(check_headroom_size(&skb)) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
-		skb->vlan_proto= htons(ETH_P_8021Q);
-		skb = __vlan_put_tag(skb, skb->vlan_proto, vid);
-#else
-		skb = __vlan_put_tag(skb, vid);
-#endif
+	// tag default vid only when switch is not in vlan-aware mode 
+	// or in vlan-aware mode but has no VLAN header.
+		if (!(is_switch0_vlan_aware && is_switch0_vlan_aware()
+			&& skb->vlan_proto == htons(ETH_P_8021Q))) {
+			// tag default vid
+		#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
+			skb->vlan_proto= htons(ETH_P_8021Q);
+			skb = __vlan_put_tag(skb, skb->vlan_proto, vid);
+		#else
+			skb = __vlan_put_tag(skb, vid);
+		#endif
+		}
 	}
 #endif
 	ei_local->stat.tx_packets++;
@@ -2827,6 +2890,20 @@ void virtif_setup_statistics(PSEUDO_ADAPTER* pAd)
 }
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35)
+static const struct net_device_ops Vlan0_netdev_ops = {
+        .ndo_open               = VirtualIF_open,
+        .ndo_stop               = VirtualIF_close,
+        .ndo_start_xmit         = vlan0_start_xmit, 
+#if defined(CONFIG_RAETH_STATS64)
+        .ndo_get_stats64        = VirtualIF_get_stats64,
+#else
+        .ndo_get_stats          = VirtualIF_get_stats,
+#endif
+        .ndo_set_mac_address    = eth_mac_addr,
+        .ndo_change_mtu         = ei_change_mtu,
+        .ndo_do_ioctl           = ei_ioctl,
+        .ndo_validate_addr      = eth_validate_addr,
+};
 static const struct net_device_ops Vlan1_netdev_ops = {
         .ndo_open               = VirtualIF_open,
         .ndo_stop               = VirtualIF_close,
@@ -2872,7 +2949,7 @@ static const struct net_device_ops Vlan3_netdev_ops = {
 static const struct net_device_ops Vlan4_netdev_ops = {
         .ndo_open               = VirtualIF_open,
         .ndo_stop               = VirtualIF_close,
-        .ndo_start_xmit	        = vlan4_start_xmit, 
+        .ndo_start_xmit         = vlan4_start_xmit, 
 #if defined(CONFIG_RAETH_STATS64)
         .ndo_get_stats64        = VirtualIF_get_stats64,
 #else
@@ -2887,20 +2964,6 @@ static const struct net_device_ops Vlan5_netdev_ops = {
         .ndo_open               = VirtualIF_open,
         .ndo_stop               = VirtualIF_close,
         .ndo_start_xmit         = vlan5_start_xmit, 
-#if defined(CONFIG_RAETH_STATS64)
-        .ndo_get_stats64        = VirtualIF_get_stats64,
-#else
-        .ndo_get_stats          = VirtualIF_get_stats,
-#endif
-        .ndo_set_mac_address    = eth_mac_addr,
-        .ndo_change_mtu         = ei_change_mtu,
-        .ndo_do_ioctl           = ei_ioctl,
-        .ndo_validate_addr      = eth_validate_addr,
-};
-static const struct net_device_ops Vlan6_netdev_ops = {
-        .ndo_open               = VirtualIF_open,
-        .ndo_stop               = VirtualIF_close,
-        .ndo_start_xmit         = vlan6_start_xmit, 
 #if defined(CONFIG_RAETH_STATS64)
         .ndo_get_stats64        = VirtualIF_get_stats64,
 #else
@@ -3260,11 +3323,11 @@ int ei_open(struct net_device *dev)
 	strcpy(pdev_raether[3]->name, "eth3");
 	strcpy(pdev_raether[4]->name, "eth4");
 
-	pdev_raether[0]->netdev_ops = &Vlan1_netdev_ops;
-	pdev_raether[1]->netdev_ops = &Vlan2_netdev_ops;
-	pdev_raether[2]->netdev_ops = &Vlan3_netdev_ops;
-	pdev_raether[3]->netdev_ops = &Vlan4_netdev_ops;
-	pdev_raether[4]->netdev_ops = &Vlan5_netdev_ops;
+	pdev_raether[0]->netdev_ops = &Vlan0_netdev_ops;
+	pdev_raether[1]->netdev_ops = &Vlan1_netdev_ops;
+	pdev_raether[2]->netdev_ops = &Vlan2_netdev_ops;
+	pdev_raether[3]->netdev_ops = &Vlan3_netdev_ops;
+	pdev_raether[4]->netdev_ops = &Vlan4_netdev_ops;
 
 	inc_mac_addr(pdev_raether[0]->dev_addr, 0);
 	inc_mac_addr(pdev_raether[1]->dev_addr, 1);
@@ -3290,9 +3353,13 @@ int ei_open(struct net_device *dev)
 		memcpy(pdev_raether[5]->dev_addr, dev->dev_addr, dev->addr_len);
 
 		strcpy(pdev_raether[5]->name, "eth5");
-		pdev_raether[5]->netdev_ops = &Vlan6_netdev_ops;
+		pdev_raether[5]->netdev_ops = &Vlan5_netdev_ops;
 		inc_mac_addr(pdev_raether[5]->dev_addr, 5);
 		inc_mac_addr(dev->dev_addr, 6);
+#if defined (CONFIG_ETHTOOL) /*&& defined (CONFIG_RAETH_ROUTER)*/
+	   pdev_raether[5]->ethtool_ops = &ra_ethtool_pseudo_ops;
+	   ethtool_init_pseudo(pdev_raether[5], 7);
+#endif
 		register_netdevice(pdev_raether[5]);
 		VirtualIF_open(pdev_raether[5]);
 	} else
@@ -3677,6 +3744,50 @@ void IsSwitchVlanTableBusy(void)
 void LANWANPartition(void)
 {
 /*Set  MT7530 */
+#if 1 // all ports isolated
+	mii_mgr_write(31, 0x2004, 0xff0003);//port0
+	mii_mgr_write(31, 0x2104, 0xff0003);//port1
+	mii_mgr_write(31, 0x2204, 0xff0003);//port2
+	mii_mgr_write(31, 0x2304, 0xff0003);//port3
+	mii_mgr_write(31, 0x2404, 0xff0003);//port4
+	mii_mgr_write(31, 0x2504, 0xff0003);//port5
+
+	//set PVID
+	mii_mgr_write(31, 0x2014, 0x10000 + PORT_VID_BASE);//port0
+	mii_mgr_write(31, 0x2114, 0x10001 + PORT_VID_BASE);//port1
+	mii_mgr_write(31, 0x2214, 0x10002 + PORT_VID_BASE);//port2
+	mii_mgr_write(31, 0x2314, 0x10003 + PORT_VID_BASE);//port3
+	mii_mgr_write(31, 0x2414, 0x10004 + PORT_VID_BASE);//port4
+	mii_mgr_write(31, 0x2514, 0x10005 + PORT_VID_BASE);//port5
+	/*port6 */
+	//VLAN member
+	IsSwitchVlanTableBusy();
+	mii_mgr_write(31, 0x94, 0x40c10001);
+	mii_mgr_write(31, 0x90, 0x80001000 + PORT_VID_BASE);//port0
+	IsSwitchVlanTableBusy();
+	mii_mgr_write(31, 0x94, 0x40c20001);
+	mii_mgr_write(31, 0x90, 0x80001001 + PORT_VID_BASE);//port1
+	IsSwitchVlanTableBusy();
+	mii_mgr_write(31, 0x94, 0x40c40001);
+	mii_mgr_write(31, 0x90, 0x80001002 + PORT_VID_BASE);//port2
+	IsSwitchVlanTableBusy();
+	mii_mgr_write(31, 0x94, 0x40c80001);
+	mii_mgr_write(31, 0x90, 0x80001003 + PORT_VID_BASE);//port3
+	IsSwitchVlanTableBusy();
+	mii_mgr_write(31, 0x94, 0x40d00001);
+	mii_mgr_write(31, 0x90, 0x80001004 + PORT_VID_BASE);//port4
+	IsSwitchVlanTableBusy();
+	mii_mgr_write(31, 0x94, 0x40e00001);
+	mii_mgr_write(31, 0x90, 0x80001005 + PORT_VID_BASE);//port5
+	IsSwitchVlanTableBusy();
+	// clear legacy vid1 & vid2 settings configued in uboot
+	mii_mgr_write(31, 0x94, 0x40000000);
+	mii_mgr_write(31, 0x90, 0x80001001);//vid1
+	IsSwitchVlanTableBusy();
+	mii_mgr_write(31, 0x94, 0x40000000);
+	mii_mgr_write(31, 0x90, 0x80001002);//vid2
+	IsSwitchVlanTableBusy();
+#else
 #ifdef CONFIG_WAN_AT_P0
 	printk("set LAN/WAN WLLLL\n");
 	//WLLLL, wan at P0
@@ -3729,6 +3840,7 @@ void LANWANPartition(void)
 	mii_mgr_write(31, 0x94, 0x40500001);//VAWD1
 	mii_mgr_write(31, 0x90, 0x80001002);//VTCR, VID=2
 	IsSwitchVlanTableBusy();
+#endif
 #endif
 }
 
