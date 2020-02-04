@@ -1,0 +1,35 @@
+RT6856 SLT Program - History
+
+Version 1.4
+===============
+- Change EPHY test packet number to reduce test time
+- Modify EPHY loss packet threshold
+- Sync RT6855 SLT version with RT6856
+
+
+
+Version 1.3
+===============
+- Reassign BIN classification
+
+
+
+Version 1.2
+===============
+- Add ethernet PHY payload checking function
+
+
+
+Version 1.1
+===============
+- Enlarge Ethernet PHY  receiving delay time
+- Enlarge USB storage device detecting time
+- Add PCIe datalink layer error counter register checking
+
+
+
+Version 1.0
+===============
+- Initial version
+
+
