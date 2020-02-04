@@ -1,6 +1,7 @@
 #include <linux/slab.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
+#include <linux/freezer.h>
 #include <linux/mm.h>
 #include <linux/stat.h>
 #include <linux/fcntl.h>
@@ -45,6 +46,8 @@
 #include <trace/events/sched.h>
 
 int core_uses_pid;
+int core_ignore_rlimit = 1;
+int core_disabled = 1;
 char core_pattern[CORENAME_MAX_SIZE] = "core";
 unsigned int core_pipe_limit;
 
@@ -299,7 +302,7 @@ static int zap_threads(struct task_struct *tsk, struct mm_struct *mm,
 	if (unlikely(nr < 0))
 		return nr;
 
-	tsk->flags = PF_DUMPCORE;
+	tsk->flags |= PF_DUMPCORE;
 	if (atomic_read(&mm->mm_users) == nr + 1)
 		goto done;
 	/*
@@ -375,7 +378,9 @@ static int coredump_wait(int exit_code, struct core_state *core_state)
 	if (core_waiters > 0) {
 		struct core_thread *ptr;
 
+		freezer_do_not_count();
 		wait_for_completion(&core_state->startup);
+		freezer_count();
 		/*
 		 * Wait for all the threads to become inactive, so that
 		 * all the thread context (extended register state, like
@@ -484,6 +489,14 @@ static int umh_pipe_setup(struct subprocess_info *info, struct cred *new)
 
 void do_coredump(siginfo_t *siginfo)
 {
+#define GOTO_FAIL(fail_type, reason)                                               \
+	do {                                                                       \
+		printk(KERN_ERR "Error while handling coredump for %d (%s): %s\n", \
+			current->pid, current->comm,                               \
+			reason);                                                   \
+		goto fail_type;                                                    \
+	} while (0)
+
 	struct core_state core_state;
 	struct core_name cn;
 	struct mm_struct *mm = current->mm;
@@ -491,10 +504,10 @@ void do_coredump(siginfo_t *siginfo)
 	const struct cred *old_cred;
 	struct cred *cred;
 	int retval = 0;
-	int flag = 0;
 	int ispipe;
 	struct files_struct *displaced;
-	bool need_nonrelative = false;
+	/* require nonrelative corefile path and be extra careful */
+	bool need_suid_safe = false;
 	bool core_dumped = false;
 	static atomic_t core_dump_count = ATOMIC_INIT(0);
 	struct coredump_params cprm = {
@@ -509,17 +522,31 @@ void do_coredump(siginfo_t *siginfo)
 		.mm_flags = mm->flags,
 	};
 
+	if (core_disabled) {
+		printk(KERN_ERR "Process %d (%s) has crashed (parent %d (%s) signal %d, code %d, addr %p), coredumps disabled\n",
+			current->pid, current->comm,
+                        current->real_parent->pid, current->real_parent->comm,
+			siginfo->si_signo, siginfo->si_code, siginfo->si_addr);
+		goto fail;
+	} else {
+		printk(KERN_ERR "Process %d (%s) has crashed (parent %d (%s) signal %d, code %d, addr %p), preparing coredump\n",
+			current->pid, current->comm,
+                        current->real_parent->pid, current->real_parent->comm,
+			siginfo->si_signo, siginfo->si_code, siginfo->si_addr);
+	}
+
 	audit_core_dumps(siginfo->si_signo);
 
 	binfmt = mm->binfmt;
 	if (!binfmt || !binfmt->core_dump)
-		goto fail;
+		GOTO_FAIL(fail, "!binfmt || !binfmt->core_dump");
+
 	if (!__get_dumpable(cprm.mm_flags))
-		goto fail;
+		GOTO_FAIL(fail, "!__get_dumpable(cprm.mm_flags)");
 
 	cred = prepare_creds();
 	if (!cred)
-		goto fail;
+		GOTO_FAIL(fail, "!prepare_creds()");
 	/*
 	 * We cannot trust fsuid as being the "true" uid of the process
 	 * nor do we know its entire history. We only know it was tainted
@@ -528,14 +555,14 @@ void do_coredump(siginfo_t *siginfo)
 	 */
 	if (__get_dumpable(cprm.mm_flags) == SUID_DUMP_ROOT) {
 		/* Setuid core dump mode */
-		flag = O_EXCL;		/* Stop rewrite attacks */
 		cred->fsuid = GLOBAL_ROOT_UID;	/* Dump root private */
-		need_nonrelative = true;
+		need_suid_safe = true;
 	}
 
 	retval = coredump_wait(siginfo->si_signo, &core_state);
 	if (retval < 0)
-		goto fail_creds;
+		GOTO_FAIL(fail_creds,
+			"coredump_wait(siginfo->si_signo, &core_state) < 0");
 
 	old_cred = override_creds(cred);
 
@@ -547,9 +574,10 @@ void do_coredump(siginfo_t *siginfo)
 		struct subprocess_info *sub_info;
 
 		if (ispipe < 0) {
-			printk(KERN_WARNING "format_corename failed\n");
-			printk(KERN_WARNING "Aborting core\n");
-			goto fail_corename;
+			printk(KERN_ERR "format_corename failed\n");
+			printk(KERN_ERR "Aborting core\n");
+			GOTO_FAIL(fail_corename,
+				"format_corename(&cn, &cprm) < 0");
 		}
 
 		if (cprm.limit == 1) {
@@ -568,27 +596,28 @@ void do_coredump(siginfo_t *siginfo)
 			 * right pid if a thread in a multi-threaded
 			 * core_pattern process dies.
 			 */
-			printk(KERN_WARNING
-				"Process %d(%s) has RLIMIT_CORE set to 1\n",
+			printk(KERN_ERR "Process %d(%s) has RLIMIT_CORE set to 1\n",
 				task_tgid_vnr(current), current->comm);
-			printk(KERN_WARNING "Aborting core\n");
-			goto fail_unlock;
+			printk(KERN_ERR "Aborting core\n");
+			GOTO_FAIL(fail_unlock, "cprm.limit == 1");
 		}
 		cprm.limit = RLIM_INFINITY;
 
 		dump_count = atomic_inc_return(&core_dump_count);
 		if (core_pipe_limit && (core_pipe_limit < dump_count)) {
-			printk(KERN_WARNING "Pid %d(%s) over core_pipe_limit\n",
+			printk(KERN_ERR "Pid %d(%s) over core_pipe_limit\n",
 			       task_tgid_vnr(current), current->comm);
-			printk(KERN_WARNING "Skipping core dump\n");
-			goto fail_dropcount;
+			printk(KERN_ERR "Skipping core dump\n");
+			GOTO_FAIL(fail_dropcount,
+				"core_pipe_limit && (core_pipe_limit < dump_count)");
 		}
 
 		helper_argv = argv_split(GFP_KERNEL, cn.corename+1, NULL);
 		if (!helper_argv) {
-			printk(KERN_WARNING "%s failed to allocate memory\n",
+			printk(KERN_ERR "%s failed to allocate memory\n",
 			       __func__);
-			goto fail_dropcount;
+			GOTO_FAIL(fail_dropcount,
+				"!argv_split(GFP_KERNEL, cn.corename+1, NULL)");
 		}
 
 		retval = -ENOMEM;
@@ -601,57 +630,97 @@ void do_coredump(siginfo_t *siginfo)
 
 		argv_free(helper_argv);
 		if (retval) {
-			printk(KERN_INFO "Core dump to %s pipe failed\n",
+			printk(KERN_ERR "Core dump to %s pipe failed\n",
 			       cn.corename);
-			goto close_fail;
+			GOTO_FAIL(close_fail,
+				"retval");
 		}
 	} else {
 		struct inode *inode;
 
-		if (cprm.limit < binfmt->min_coredump)
-			goto fail_unlock;
+		if (core_ignore_rlimit)
+			cprm.limit = RLIM_INFINITY;
 
-		if (need_nonrelative && cn.corename[0] != '/') {
-			printk(KERN_WARNING "Pid %d(%s) can only dump core "\
+		if (cprm.limit < binfmt->min_coredump)
+			GOTO_FAIL(fail_unlock,
+				"cprm.limit < binfmt->min_coredump");
+
+		if (need_suid_safe && cn.corename[0] != '/') {
+			printk(KERN_ERR "Pid %d(%s) can only dump core "\
 				"to fully qualified path!\n",
 				task_tgid_vnr(current), current->comm);
-			printk(KERN_WARNING "Skipping core dump\n");
-			goto fail_unlock;
+			printk(KERN_ERR "Skipping core dump\n");
+			GOTO_FAIL(fail_unlock,
+				"need_suid_safe && cn.corename[0] != '/'");
 		}
 
+		/*
+		 * Unlink the file if it exists unless this is a SUID
+		 * binary - in that case, we're running around with root
+		 * privs and don't want to unlink another user's coredump.
+		 */
+		if (!need_suid_safe) {
+			mm_segment_t old_fs;
+
+			old_fs = get_fs();
+			set_fs(KERNEL_DS);
+			/*
+			 * If it doesn't exist, that's fine. If there's some
+			 * other problem, we'll catch it at the filp_open().
+			 */
+			(void) sys_unlink((const char __user *)cn.corename);
+			set_fs(old_fs);
+		}
+
+		/*
+		 * There is a race between unlinking and creating the
+		 * file, but if that causes an EEXIST here, that's
+		 * fine - another process raced with us while creating
+		 * the corefile, and the other process won. To userspace,
+		 * what matters is that at least one of the two processes
+		 * writes its coredump successfully, not which one.
+		 */
 		cprm.file = filp_open(cn.corename,
-				 O_CREAT | 2 | O_NOFOLLOW | O_LARGEFILE | flag,
+				 O_CREAT | 2 | O_NOFOLLOW |
+				 O_LARGEFILE | O_EXCL,
 				 0600);
 		if (IS_ERR(cprm.file))
-			goto fail_unlock;
+			GOTO_FAIL(fail_unlock,
+				"IS_ERR(cprm.file)");
 
 		inode = file_inode(cprm.file);
 		if (inode->i_nlink > 1)
-			goto close_fail;
+			GOTO_FAIL(close_fail, "inode->i_nlink > 1");
 		if (d_unhashed(cprm.file->f_path.dentry))
-			goto close_fail;
+			GOTO_FAIL(close_fail,
+				"d_unhashed(cprm.file->f_path.dentry)");
 		/*
 		 * AK: actually i see no reason to not allow this for named
 		 * pipes etc, but keep the previous behaviour for now.
 		 */
 		if (!S_ISREG(inode->i_mode))
-			goto close_fail;
+			GOTO_FAIL(close_fail,
+				"!S_ISREG(inode->i_mode)");
 		/*
 		 * Dont allow local users get cute and trick others to coredump
 		 * into their pre-created files.
 		 */
 		if (!uid_eq(inode->i_uid, current_fsuid()))
-			goto close_fail;
+			GOTO_FAIL(close_fail,
+				"!uid_eq(inode->i_uid, current_fsuid())");
 		if (!cprm.file->f_op || !cprm.file->f_op->write)
-			goto close_fail;
+			GOTO_FAIL(close_fail,
+				"!cprm.file->f_op || !cprm.file->f_op->write");
 		if (do_truncate(cprm.file->f_path.dentry, 0, 0, cprm.file))
-			goto close_fail;
+			GOTO_FAIL(close_fail,
+				"do_truncate(cprm.file->f_path.dentry, 0, 0, cprm.file)");
 	}
 
 	/* get us an unshared descriptor table; almost always a no-op */
 	retval = unshare_files(&displaced);
 	if (retval)
-		goto close_fail;
+		GOTO_FAIL(close_fail,
+			"unshare_files(&displaced)");
 	if (displaced)
 		put_files_struct(displaced);
 	if (!dump_interrupted()) {
@@ -675,6 +744,7 @@ fail_corename:
 fail_creds:
 	put_cred(cred);
 fail:
+#undef GOTO_FAIL
 	return;
 }
 

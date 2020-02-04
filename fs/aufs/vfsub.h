@@ -27,6 +27,7 @@
 #include <linux/fs.h>
 #include <linux/lglock.h>
 #include <linux/mount.h>
+#include <linux/xattr.h>
 #include "debug.h"
 
 /* copied from linux/fs/internal.h */
@@ -34,37 +35,6 @@
 extern struct lglock vfsmount_lock;
 extern void __mnt_drop_write(struct vfsmount *);
 extern spinlock_t inode_sb_list_lock;
-
-/* copied from linux/fs/file_table.c */
-extern struct lglock files_lglock;
-#ifdef CONFIG_SMP
-/*
- * These macros iterate all files on all CPUs for a given superblock.
- * files_lglock must be held globally.
- */
-#define do_file_list_for_each_entry(__sb, __file)		\
-{								\
-	int i;							\
-	for_each_possible_cpu(i) {				\
-		struct list_head *list;				\
-		list = per_cpu_ptr((__sb)->s_files, i);		\
-		list_for_each_entry((__file), list, f_u.fu_list)
-
-#define while_file_list_for_each_entry				\
-	}							\
-}
-
-#else
-
-#define do_file_list_for_each_entry(__sb, __file)		\
-{								\
-	struct list_head *list;					\
-	list = &(sb)->s_files;					\
-	list_for_each_entry((__file), list, f_u.fu_list)
-
-#define while_file_list_for_each_entry				\
-}
-#endif
 
 /* ---------------------------------------------------------------------- */
 
@@ -298,6 +268,31 @@ int vfsub_sio_rmdir(struct inode *dir, struct path *path);
 int vfsub_sio_notify_change(struct path *path, struct iattr *ia);
 int vfsub_notify_change(struct path *path, struct iattr *ia);
 int vfsub_unlink(struct inode *dir, struct path *path, int force);
+
+/* ---------------------------------------------------------------------- */
+
+static inline int vfsub_setxattr(struct dentry *dentry, const char *name,
+				 const void *value, size_t size, int flags)
+{
+	int err;
+
+	lockdep_off();
+	err = vfs_setxattr(dentry, name, value, size, flags);
+	lockdep_on();
+
+	return err;
+}
+
+static inline int vfsub_removexattr(struct dentry *dentry, const char *name)
+{
+	int err;
+
+	lockdep_off();
+	err = vfs_removexattr(dentry, name);
+	lockdep_on();
+
+	return err;
+}
 
 #endif /* __KERNEL__ */
 #endif /* __AUFS_VFSUB_H__ */

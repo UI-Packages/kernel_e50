@@ -13,6 +13,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/thread_info.h>
+#include <linux/string.h>
 
 /*
  * The fs value determines whether argument validity checking should be
@@ -1361,7 +1362,6 @@ extern size_t __copy_inuser(void *__to, const void *__from, size_t __n);
 	__cu_len;							\
 })
 #endif
-
 #ifndef CONFIG_EVA
 #define __copy_in_user(to, from, n)                                     \
 ({                                                                      \
@@ -1392,6 +1392,8 @@ extern size_t __copy_inuser(void *__to, const void *__from, size_t __n);
 		might_fault();                                          \
 		__cu_len = __invoke_copy_from_kernel(__cu_to, __cu_from,  \
 						   __cu_len);           \
+	} else {							\
+		memset(__cu_to, 0, __cu_len);				\
 	}                                                               \
 	__cu_len;                                                       \
 })
@@ -1424,7 +1426,7 @@ extern size_t __copy_inuser(void *__to, const void *__from, size_t __n);
 		   access_ok(VERIFY_WRITE, __cu_to, __cu_len))) {	\
 		might_fault();						\
 		__cu_len = __invoke_copy_in_user(__cu_to, __cu_from,  \
-						 __cu_len);           \
+						 __cu_len);          \
 	}								\
 	__cu_len;							\
 })

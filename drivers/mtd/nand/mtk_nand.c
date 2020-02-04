@@ -116,6 +116,9 @@ int mtk_nand_read_oob_hw(struct mtd_info *mtd, struct nand_chip *chip, int page)
 //#define _MTK_NAND_DUMMY_DRIVER_
 //#define __INTERNAL_USE_AHB_MODE__ 	(1)
 
+uint64_t MTD_ROOTFS_END_OFFSET = 0;
+int mtd_rootfs_has_change = 0;
+
 void show_stack(struct task_struct *tsk, unsigned long *sp);
 extern void mt_irq_set_sens(unsigned int irq, unsigned int sens);
 extern void mt_irq_set_polarity(unsigned int irq,unsigned int polarity);
@@ -2230,6 +2233,16 @@ int mtk_nand_exec_write_page(struct mtd_info *mtd, u32 u4RowAddr, u32 u4PageSize
 }
 
 
+static int get_mtd_id_by_name(char *mtd_name)
+{
+    int i;
+    for (i = 0; i <= part_num; i++)
+    {
+        if (g_pasStatic_Partition[i].name == mtd_name)
+            return i;
+    }
+    return -1;
+}
 
 #if defined(SKIP_BAD_BLOCK)
 
@@ -2463,7 +2476,25 @@ static int is_skip_bad_block(struct mtd_info *mtd, int page)
 	struct nand_chip *chip = mtd->priv;
 	int poff = page << chip->page_shift;
 
-	if (poff >= MTD_ROOTFS_START_OFF && poff < MTD_ROOTFS_END_OFF)
+	if (!mtd_rootfs_has_change)
+	{
+		switch(chip->chipsize >> 20)
+	        {
+	            case 256:
+	                    MTD_ROOTFS_END_OFFSET = 0xf7c0000;  /* 253696KB */
+	                    break;
+	            case 512:
+	                     MTD_ROOTFS_END_OFFSET = 0x1f4c0000; /* 512768KB */
+	                     break;
+	            default:
+	            case 128:
+	                     MTD_ROOTFS_END_OFFSET = 0x7800000; /* 122880KB */
+	                     break;
+	        }
+		mtd_rootfs_has_change = 1;
+	}
+
+	if (poff >= MTD_ROOTFS_START_OFF && poff < (MTD_ROOTFS_START_OFF + MTD_ROOTFS_END_OFFSET))
 		return 0;
 
 	return 1;
@@ -4823,7 +4854,25 @@ int mtk_nand_probe()
     }
 #endif
 
-	err = add_mtd_partitions(mtd, g_pasStatic_Partition, part_num);
+    int p = get_mtd_id_by_name("RootFS");
+    if ( p != -1)
+    {
+        switch(devinfo.totalsize)
+        {
+         case 256:
+                  g_pasStatic_Partition[p].size = 0xf7c0000;  /* 253696KB */
+                  break;
+         case 512:
+                  g_pasStatic_Partition[p].size = 0x1f4c0000; /* 512768KB */
+                  break;
+         case 128:
+         default:
+                  g_pasStatic_Partition[p].size = 0x7800000; /* 122880KB */
+                  break;
+        }
+    }
+
+    err = add_mtd_partitions(mtd, g_pasStatic_Partition, part_num);
 
 #if 0
 #ifdef PMT

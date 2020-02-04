@@ -163,19 +163,6 @@ static bool ip6_parse_tlv(const struct tlvtype_proc *procs, struct sk_buff *skb)
 		len -= optlen;
 	}
 
-/* NOTE:  In rfc4942 and rfc2460 I cannot find anything which would implicate to drop packets which have only padding in tlv.
- *            Current behaviour breaks TAHI Test v6LC.1.2.6.
- * (Ref: http://www.kernelhub.org/?msg=344271&p=2)
- */
-#if 0
-	/* This case will not be caught by above check since its padding
-	 * length is smaller than 7:
-	 * 1 byte NH + 1 byte Length + 6 bytes Padding
-	 */
-	if ((padlen == 6) && ((off - skb_network_header_len(skb)) == 8))
-		goto bad;
-#endif
-
 	if (len == 0)
 		return true;
 bad:

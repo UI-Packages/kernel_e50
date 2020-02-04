@@ -80,11 +80,17 @@ void  __init prom_init_cmdline(void)
 	cp = &(arcs_cmdline[0]);
 
 #ifdef CONFIG_UBOOT_CMDLINE
-	while(actr < prom_argc) {
+	if(prom_argc < 2) {
+	  strcpy(cp, rt2880_cmdline);
+	  cp += strlen(rt2880_cmdline);
+	  *cp++ = ' ';
+	} else {
+	  while(actr < prom_argc) {
 	    strcpy(cp, prom_argv(actr));
 	    cp += strlen(prom_argv(actr));
 	    *cp++ = ' ';
 	    actr++;
+	  }
 	}
 #else
 	strcpy(cp, rt2880_cmdline);

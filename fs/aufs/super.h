@@ -109,7 +109,8 @@ struct au_sbinfo {
 	} au_si_pid;
 
 	/*
-	 * dirty approach to protect sb->sb_inodes and ->s_files from remount.
+	 * dirty approach to protect sb->sb_inodes and ->s_files (gone) from
+	 * remount.
 	 */
 	atomic_long_t		si_ninodes, si_nfiles;
 
@@ -189,6 +190,9 @@ struct au_sbinfo {
 	wait_queue_head_t	si_plink_wq;
 	spinlock_t		si_plink_maint_lock;
 	pid_t			si_plink_maint_pid;
+
+	/* file list */
+	struct au_sphlhead	si_files;
 
 	/*
 	 * sysfs and lifetime management.
@@ -378,10 +382,7 @@ AuStubVoid(au_xigen_inc, struct inode *inode)
 AuStubInt0(au_xigen_new, struct inode *inode)
 AuStubInt0(au_xigen_set, struct super_block *sb, struct file *base)
 AuStubVoid(au_xigen_clr, struct super_block *sb)
-static inline int au_busy_or_stale(void)
-{
-	return -EBUSY;
-}
+AuStub(int, au_busy_or_stale, return -EBUSY, void)
 #endif /* CONFIG_AUFS_EXPORT */
 
 /* ---------------------------------------------------------------------- */
@@ -423,8 +424,8 @@ AuStubVoid(au_sbilist_unlock, void)
 #endif /* CONFIG_AUFS_MAGIC_SYSRQ */
 #else
 AuStubVoid(au_sbilist_init, void)
-AuStubVoid(au_sbilist_add, struct super_block*)
-AuStubVoid(au_sbilist_del, struct super_block*)
+AuStubVoid(au_sbilist_add, struct super_block *sb)
+AuStubVoid(au_sbilist_del, struct super_block *sb)
 AuStubVoid(au_sbilist_lock, void)
 AuStubVoid(au_sbilist_unlock, void)
 #define AuGFP_SBILIST	GFP_NOFS
@@ -435,7 +436,7 @@ AuStubVoid(au_sbilist_unlock, void)
 static inline void dbgaufs_si_null(struct au_sbinfo *sbinfo)
 {
 	/*
-	 * This function is a dynamic '__init' fucntion actually,
+	 * This function is a dynamic '__init' function actually,
 	 * so the tiny check for si_rwsem is unnecessary.
 	 */
 	/* AuRwMustWriteLock(&sbinfo->si_rwsem); */

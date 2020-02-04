@@ -113,6 +113,8 @@ static const struct bin_table bin_kern_table[] = {
 
 	{ CTL_INT,	KERN_S390_USER_DEBUG_LOGGING,	"userprocess_debug" },
 	{ CTL_INT,	KERN_CORE_USES_PID,		"core_uses_pid" },
+	{ CTL_INT,	KERN_CORE_IGNORE_RLIMIT,	"core_ignore_rlimit" },
+	{ CTL_INT,	KERN_CORE_DISABLED,		"core_disabled" },
 	/* KERN_TAINTED "tainted" no longer used */
 	{ CTL_INT,	KERN_CADPID,			"cad_pid" },
 	{ CTL_INT,	KERN_PIDMAX,			"pid_max" },

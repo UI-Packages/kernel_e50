@@ -12,16 +12,23 @@
 #define NF_LOG_UID		0x08	/* Log UID owning local socket */
 #define NF_LOG_MASK		0x0f
 
-#define NF_LOG_TYPE_LOG		0x01
-#define NF_LOG_TYPE_ULOG	0x02
+/* This flag indicates that copy_len field in nf_loginfo is set */
+#define NF_LOG_F_COPY_LEN	0x1
+
+#define NF_LOG_TYPE_LOG         0x01
+#define NF_LOG_TYPE_ULOG        0x02
 
 struct nf_loginfo {
 	u_int8_t type;
 	union {
 		struct {
+			/* copy_len will be used iff you set
+			 * NF_LOG_F_COPY_LEN in flags
+			 */
 			u_int32_t copy_len;
 			u_int16_t group;
 			u_int16_t qthreshold;
+			u_int16_t flags;
 		} ulog;
 		struct {
 			u_int8_t level;

@@ -84,6 +84,20 @@ struct resource rt2880_res_ram = {
 
 #define PFN_ALIGN(x)    (((unsigned long)(x) + (PAGE_SIZE - 1)) & PAGE_MASK)
 
+#ifdef CONFIG_UBOOT_CMDLINE
+__init int prom_get_ramsize(void)
+{
+	char *argptr;
+	int  ramsize = 0;
+	argptr = prom_getcmdline();
+	if ((argptr = strstr(argptr, "ubnt_ramsize=")) != NULL)
+	{
+		argptr += strlen("ubnt_ramsize=");
+		ramsize = simple_strtol(&argptr[0], NULL, 0);
+	}
+	return ramsize;
+}
+#endif
 
 struct prom_pmemblock * __init prom_getmdesc(void)
 {
@@ -139,6 +153,27 @@ static int __init prom_memtype_classify (unsigned int type)
 }
 #endif
 
+#ifdef CONFIG_UBOOT_CMDLINE
+void __init prom_meminit()
+{
+#if defined(CONFIG_MT7621_ASIC) || defined(CONFIG_MT7621_FPGA)
+	int ramsize = 0;
+	ramsize = prom_get_ramsize();
+	if(!ramsize) {
+		ramsize = 256;
+	}
+
+	//ToDo: Currently, we only consider 256MB & 512MB DDR
+	//      If use 1024M DDR further, need modify here
+	if(ramsize == 512) {
+		add_memory_region(0x00000000, (ramsize - 64) *1024*1024, BOOT_MEM_RAM);
+		add_memory_region(0x20000000, 64*1024*1024, BOOT_MEM_RAM);
+	} else {
+		add_memory_region(0x00000000, ramsize*1024*1024,  BOOT_MEM_RAM);
+	}
+#endif
+}
+#else // CONFIG_UBOOT_CMDLINE
 void __init prom_meminit(void)
 {
 	//struct prom_pmemblock *p;
@@ -153,7 +188,8 @@ void __init prom_meminit(void)
  	add_memory_region(0x08000000, RAM_SIZE, BOOT_MEM_RAM);
 #elif defined(CONFIG_MT7621_ASIC) || defined(CONFIG_MT7621_FPGA)
 #if defined (CONFIG_RT2880_DRAM_512M)
- 	add_memory_region(0x00000000, RAM_SIZE + 64*1024*1024, BOOT_MEM_RAM);
+        add_memory_region(0x00000000, RAM_SIZE - 64*1024*1024, BOOT_MEM_RAM);
+        add_memory_region(0x20000000, 64*1024*1024, BOOT_MEM_RAM);
 #else
  	add_memory_region(0x00000000, RAM_SIZE, BOOT_MEM_RAM);
 #endif
@@ -189,6 +225,7 @@ void __init prom_meminit(void)
 	}
 #endif
 }
+#endif // CONFIG_UBOOT_CMDLINE
 
 void __init prom_free_prom_memory(void)
 {

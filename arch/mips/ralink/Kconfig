@@ -244,6 +244,8 @@ config RT2880_DRAM_128M
 
 config RT2880_DRAM_256M
        bool "256M"
+       depends on  RALINK_MT7621
+       select HIGHMEM
 
 config RT2880_DRAM_512M
        bool "512M"

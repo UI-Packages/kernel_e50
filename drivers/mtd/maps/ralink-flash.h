@@ -15,8 +15,10 @@
  * | kernel2 3072K    |
  * --------------------
  * | rootfs 253696K   |
+ * | or               |
+ * | rootfs 512768K   |
  * --------------------
- * | badblock 1024K   |
+ * | badblock 4096K   |
  * --------------------
  *
  */
@@ -28,7 +30,7 @@
 #define CONFIG_MTD_KERNEL_PART_SIZ 0x300000 /* 3072KB */
 #define MTD_KERN_PART_QTY 2 /* two kernel MTD partitions */
 #define MTD_KERN_PART_SIZE CONFIG_MTD_KERNEL_PART_SIZ
-#define MTD_ROOTFS_PART_SIZE 0xf7c0000 /* 253696KB */
+#define MTD_ROOTFS_PART_SIZE 0x1f4c0000 /* 512768KB */
 
 #define IMAGE1_SIZE \
 	(MTD_BOOT_PART_SIZE + MTD_CONFIG_PART_SIZE + MTD_FACTORY_PART_SIZE \
