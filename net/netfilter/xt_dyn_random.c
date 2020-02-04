@@ -13,6 +13,9 @@
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter/xt_dyn_random.h>
 
+#include <net/tcp.h>
+#include <net/udp.h>
+
 MODULE_LICENSE("GPL");
 
 struct dyn_rand {
@@ -26,6 +29,7 @@ struct dyn_rand {
 static struct proc_dir_entry *proc_root;
 static LIST_HEAD(proc_list);
 static DEFINE_MUTEX(proc_lock);
+static u32 sticky_iv = 0;
 
 static ssize_t _read_proc(struct file *file, char __user *buf,
 			  size_t size, loff_t *loff)
@@ -57,9 +61,9 @@ static ssize_t _write_proc(struct file *file, const char __user *buf,
 	if (copy_from_user(tmp, buf, count))
 		return -EFAULT;
 
+	sticky_iv = net_random();
+
 	p = simple_strtoul(tmp, NULL, 10);
-	if (p >= 0x100)
-		return -EINVAL;
 
 	e->prob = p;
 	return count;
@@ -72,12 +76,89 @@ static const struct file_operations fops = {
 	.llseek  = default_llseek,
 };
 
+enum {
+	STICKY_SADDR = (1 << 0),
+	STICKY_DADDR = (1 << 1),
+	STICKY_PROTO = (1 << 2),
+	STICKY_SPORT = (1 << 3),
+	STICKY_DPORT = (1 << 4),
+};
+
 static bool dyn_rand_mt(const struct sk_buff *skb, struct xt_action_param *par)
 {
 	const struct xt_dyn_rand_info *info = par->matchinfo;
 	const struct dyn_rand *e = info->dyn_rand;
+	uint32_t prob = (e->prob & 0xff);
+	uint32_t sticky = ((e->prob >> 8) & 0xff);
+	u32 hv = sticky_iv;
+	u8 tproto;
+	const struct iphdr *iph;
+	const struct ipv6hdr *ip6h;
 
-	return ((e->prob > 0 && (net_random() & 0xff) <= e->prob)
+	if (par->family == NFPROTO_IPV4) {
+		iph = ip_hdr(skb);
+		tproto = iph->protocol;
+	} else {
+		ip6h = ipv6_hdr(skb);
+		tproto = ip6h->nexthdr;
+	}
+
+	if (!sticky) {
+		hv = net_random();
+		goto done;
+	}
+
+	if (sticky & STICKY_SADDR) {
+		if (par->family == NFPROTO_IPV4)
+			hv = jhash(&(iph->saddr), sizeof(iph->saddr), hv);
+		else
+			hv = jhash(&(ip6h->saddr), sizeof(ip6h->saddr), hv);
+	}
+
+	if (sticky & STICKY_DADDR) {
+		if (par->family == NFPROTO_IPV4)
+			hv = jhash(&(iph->daddr), sizeof(iph->daddr), hv);
+		else
+			hv = jhash(&(ip6h->daddr), sizeof(ip6h->daddr), hv);
+	}
+
+	if (sticky & STICKY_PROTO)
+		hv = jhash(&(tproto), sizeof(tproto), hv);
+
+	if (!(sticky & (STICKY_SPORT | STICKY_DPORT)))
+		goto done;
+
+	if (tproto == IPPROTO_TCP) {
+		const struct tcphdr *th;
+		struct tcphdr _th;
+
+		th = skb_header_pointer(skb, par->thoff, sizeof(_th), &_th);
+		if (!th)
+			goto done;
+
+		if (sticky & STICKY_SPORT)
+			hv = jhash(&(th->source), sizeof(th->source), hv);
+
+		if (sticky & STICKY_DPORT)
+			hv = jhash(&(th->dest), sizeof(th->dest), hv);
+	} else if (tproto == IPPROTO_UDP) {
+		const struct udphdr *uh;
+		struct udphdr _uh;
+
+		uh = skb_header_pointer(skb, par->thoff, sizeof(_uh), &_uh);
+		if (!uh)
+			goto done;
+
+		if (sticky & STICKY_SPORT)
+			hv = jhash(&(uh->source), sizeof(uh->source), hv);
+
+		if (sticky & STICKY_DPORT)
+			hv = jhash(&(uh->dest), sizeof(uh->dest), hv);
+	}
+
+done:
+
+	return ((prob > 0 && (hv & 0xff) <= prob)
 		^ info->invert);
 }
 
