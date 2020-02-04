@@ -1033,8 +1033,21 @@ void MT7621_i2c_write_byte(u8 dev_addr, u32 address, u8 data)
 	udelay(5000);
 }
 
+u16 MT7621_i2c_read_word(u8 dev_addr, u32 address)
+{
+	u8 data[2];
+
+	i2cdrv_addr = dev_addr;
+	switch_address_bytes(1);
+	i2c_master_init();
+	i2c_write(address, &data, 0);
+	i2c_read(&data, 2);
+	return (u16)(data[0] << 8 | data[1]);
+}
+
 EXPORT_SYMBOL(MT7621_i2c_read_byte);
 EXPORT_SYMBOL(MT7621_i2c_write_byte);
+EXPORT_SYMBOL(MT7621_i2c_read_word);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35)
 long i2cdrv_ioctl(struct file *filp, unsigned int cmd, 

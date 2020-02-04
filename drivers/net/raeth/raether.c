@@ -3363,7 +3363,8 @@ int ei_open(struct net_device *dev)
 #endif
 
 	if (strcmp(ubnt_bd_g.type, "e51") == 0
-	    || strcmp(ubnt_bd_g.type, "e52") == 0) {
+	    || strcmp(ubnt_bd_g.type, "e52") == 0
+	    || strcmp(ubnt_bd_g.type, "e53") == 0) {
 		pdev_raether[5] = alloc_etherdev(sizeof(PSEUDO_ADAPTER));
 		ether_setup(pdev_raether[5]);
 		pdev_raether[5]->features = dev->features;
