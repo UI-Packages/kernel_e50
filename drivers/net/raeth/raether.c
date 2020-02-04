@@ -3894,7 +3894,7 @@ void setup_internal_gsw(void)
 #endif
 #if !defined (CONFIG_RAETH_8023AZ_EEE)	
 	mii_mgr_write(31, 0x7b00, 0x102);  //delay setting for 10/1000M
-	mii_mgr_write(31, 0x7b04, 0x14);  //delay setting for 10/1000M
+	mii_mgr_write(31, 0x7b04, 0x10);  //delay setting for 10/1000M
 #endif
 #if 0 
 	for(i=0;i<=4;i++) {	
