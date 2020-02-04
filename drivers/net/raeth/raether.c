@@ -2441,6 +2441,22 @@ static void ei_vlan_rx_register(struct net_device *dev, struct vlan_group *grp)
 #endif
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35)
+#ifdef CONFIG_NET_POLL_CONTROLLER
+static void raeth_poll_controller(struct net_device *dev)
+{
+       END_DEVICE *ei_local = netdev_priv(dev);
+
+ #if defined (CONFIG_MIPS)
+       ei_interrupt(dev->irq, dev);
+ #else
+       ei_interrupt(ei_local->irq0, dev);
+ #if defined (CONFIG_RAETH_TX_RX_INT_SEPARATION)
+       ei_tx_interrupt(ei_local->irq1, dev);
+       ei_rx_interrupt(ei_local->irq2, dev);
+ #endif
+ #endif
+} 
+#endif
 static const struct net_device_ops ei_netdev_ops = {
         .ndo_init               = rather_probe,
         .ndo_open               = ei_open,
@@ -2459,7 +2475,8 @@ static const struct net_device_ops ei_netdev_ops = {
 	.ndo_vlan_rx_register   = ei_vlan_rx_register,
 #endif
 #ifdef CONFIG_NET_POLL_CONTROLLER
-        .ndo_poll_controller    = raeth_clean,
+          .ndo_poll_controller    = raeth_poll_controller,
+//        .ndo_poll_controller    = raeth_clean,
 #endif
 //	.ndo_tx_timeout		= ei_tx_timeout,
 };
